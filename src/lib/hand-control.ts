@@ -4,7 +4,7 @@
  */
 
 export type Landmark = { x: number; y: number; z: number };
-export type Gesture = "none" | "open-palm-front" | "open-palm-back" | "pointing";
+export type Gesture = "none" | "fist" | "open-palm-front" | "open-palm-back" | "pointing";
 
 const WRIST = 0;
 const INDEX_MCP = 5;
@@ -55,6 +55,9 @@ export function classifyGesture(lm: Landmark[], handedness: string): Gesture {
   const pinky = isExtended(lm, PINKY_TIP, 18);
 
   const spread = dist(at(lm, INDEX_TIP), at(lm, PINKY_TIP)) / span;
+
+  // All fingers curled -> closed fist, used to reset between slide gestures.
+  if (!index && !middle && !ring && !pinky) return "fist";
 
   // Index finger up, the rest curled -> laser pointer.
   if (index && !middle && !ring && !pinky) return "pointing";
@@ -108,7 +111,11 @@ export class PointSmoother {
   }
 }
 
-/** Debounces slide gestures so one hand movement never fires twice. */
+/**
+ * Debounces slide gestures so one hand movement never fires twice.
+ * After a palm gesture fires, the user must close their hand into a fist
+ * before the next palm gesture can trigger again.
+ */
 export class GestureGate {
   private last: Gesture = "none";
   private stable = 0;
@@ -128,10 +135,11 @@ export class GestureGate {
     }
     this.stable += 1;
 
-    if (gesture === "none" || gesture === "pointing") {
+    if (gesture === "fist") {
       this.armed = true;
       return null;
     }
+    if (gesture === "none" || gesture === "pointing") return null;
     if (!this.armed || this.stable < this.framesRequired) return null;
     if (now - this.firedAt < this.cooldownMs) return null;
 
@@ -143,6 +151,7 @@ export class GestureGate {
 
 export const gestureLabel: Record<Gesture, string> = {
   none: "Waiting for hand",
+  fist: "Closed fist — gesture reset",
   "open-palm-front": "Front palm — next slide",
   "open-palm-back": "Back palm — previous slide",
   pointing: "Index finger — laser",

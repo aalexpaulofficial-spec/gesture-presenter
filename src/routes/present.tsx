@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ArrowLeft,
   ChevronLeft,
   ChevronRight,
   Hand,
@@ -148,12 +149,21 @@ function PresentPage() {
     <div className="flex min-h-screen flex-col bg-background">
       {!isFullscreen && (
         <header className="flex items-center justify-between border-b border-border px-4 py-3 sm:px-6">
-          <Link to="/" className="flex items-center gap-2 font-display text-sm font-semibold">
-            <span className="grid h-8 w-8 place-items-center rounded-xl bg-primary text-primary-foreground">
-              <Hand className="h-4 w-4" />
-            </span>
-            PPT Hand Control
-          </Link>
+          <div className="flex items-center gap-1">
+            <Link
+              to="/"
+              aria-label="Back to home"
+              className="grid h-8 w-8 place-items-center rounded-xl text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+            <Link to="/" className="flex items-center gap-2 font-display text-sm font-semibold">
+              <span className="grid h-8 w-8 place-items-center rounded-xl bg-primary text-primary-foreground">
+                <Hand className="h-4 w-4" />
+              </span>
+              PPT Hand Control
+            </Link>
+          </div>
           <span className="max-w-[45vw] truncate text-xs text-muted-foreground">{fileName}</span>
         </header>
       )}
@@ -275,13 +285,15 @@ function HowToControl() {
           <li className="flex gap-3">
             <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary-soft text-lg">🖐️</span>
             <span>
-              <strong className="font-display">Open front palm</strong> — move to the next slide.
+              <strong className="font-display">Open front palm</strong> — move to the next slide. To go
+              forward again, close your hand into a fist first, then open your front palm again.
             </span>
           </li>
           <li className="flex gap-3">
             <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary-soft text-lg">🤚</span>
             <span>
-              <strong className="font-display">Back of your hand</strong> — go to the previous slide.
+              <strong className="font-display">Back of your hand</strong> — go to the previous slide. To
+              go back again, close your hand into a fist first, then show the back of your hand again.
             </span>
           </li>
           <li className="flex gap-3">
@@ -293,7 +305,9 @@ function HowToControl() {
           </li>
         </ul>
         <p className="text-xs text-muted-foreground">
-          Fullscreen shows only your slide, and hand control keeps working while you present.
+          Each palm gesture fires once. Closing your hand into a fist ✊ resets the gesture, so you can
+          never skip slides by accident. Fullscreen shows only your slide, and hand control keeps
+          working while you present.
         </p>
       </DialogContent>
     </Dialog>
