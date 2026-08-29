@@ -12,6 +12,7 @@ import {
   Maximize2,
   MonitorPlay,
   MousePointer2,
+  Mic,
   Presentation,
   Share,
   ShieldCheck,
@@ -518,13 +519,18 @@ function Pricing() {
       note: "forever",
       copy: "Everything you need to present hands-free.",
       cta: "Start presenting",
+      badge: null,
       highlight: false,
       features: [
         "Unlimited basic presentations",
-        "Front palm → next slide",
-        "Back palm → previous slide",
-        "Index finger → laser pointer",
+        "Front palm → Next slide",
+        "Close hand → reopen front palm → Next slide again",
+        "Back of hand → Previous slide",
+        "Close hand → reopen back of hand → Previous slide again",
+        "Index finger → Laser pointer",
+        "Full-slide laser movement",
         "Camera hand control",
+        "Exact PPT/PPTX presentation",
         "Fullscreen presentation",
         "Browser-based usage",
       ],
@@ -533,18 +539,47 @@ function Pricing() {
       name: "Pro",
       price: "$9",
       note: "per month",
-      copy: "For presenters who are on stage every week.",
+      copy: "For presenters who want hands + voice.",
       cta: "Upgrade to Pro",
+      badge: "MOST POPULAR",
       highlight: true,
+      hasVoiceHighlight: true,
       features: [
-        "Larger presentation limits",
-        "Advanced laser customisation",
+        "Voice slide navigation",
+        "Voice → specific slide",
+        "Advanced laser controls",
         "Gesture sensitivity controls",
         "Presentation session history",
         "Advanced presenter controls",
         "Custom branding",
-        "Analytics",
+        "Presentation analytics",
         "Priority processing",
+      ],
+    },
+    {
+      name: "Ultra Pro",
+      price: "$19",
+      note: "per month",
+      copy: "AI-powered presentation intelligence.",
+      cta: "Upgrade to Ultra Pro",
+      badge: "POWERED BY VEYRA AI",
+      highlight: false,
+      features: [
+        "Everything in Pro",
+        "Veyra AI Presentation Copilot",
+        "AI understands the uploaded presentation",
+        "Ask questions about the current slide",
+        "Semantic slide search",
+        "“Go to the budget slide”",
+        "“Highlight the important number”",
+        "Private presenter assistance",
+        "“What should I explain here?”",
+        "“What comes next?”",
+        "AI slide summaries",
+        "AI presenter notes",
+        "AI presentation coaching",
+        "Speaking/time analysis",
+        "Post-presentation AI insights",
       ],
     },
     {
@@ -553,6 +588,7 @@ function Pricing() {
       note: "per team",
       copy: "For teams and organisations presenting at scale.",
       cta: "Talk to us",
+      badge: null,
       highlight: false,
       features: [
         "Team accounts",
@@ -562,30 +598,31 @@ function Pricing() {
         "Organisation branding",
         "Higher limits",
         "Priority support",
-        "Enterprise and security options",
+        "Enterprise security options",
+        "Team management",
       ],
     },
   ];
 
   return (
     <section id="pricing" className="py-20 sm:py-28">
-      <div className="mx-auto max-w-6xl px-5 lg:px-8">
+      <div className="mx-auto max-w-[90rem] px-5 lg:px-8">
         <SectionHead
           eyebrow="Pricing"
           title="Hand control is free. Always."
           copy="Upgrade only when you want deeper customisation, history, branding or team management."
         />
-        <div className="mt-14 grid items-start gap-5 lg:grid-cols-3">
+        <div className="mt-14 grid items-start gap-5 md:grid-cols-2 xl:grid-cols-4">
           {tiers.map((t) => (
             <div
               key={t.name}
-              className={`card-premium p-8 ${t.highlight ? "border-primary/45 shadow-lift lg:-mt-4 lg:pb-10" : "card-premium-hover"}`}
+              className={`card-premium flex h-full flex-col p-6 xl:p-8 ${t.highlight ? "border-primary/45 shadow-lift xl:-mt-4 xl:pb-12" : "card-premium-hover"}`}
             >
               <div className="flex items-center justify-between">
                 <h3 className="font-display text-lg font-semibold">{t.name}</h3>
-                {t.highlight && (
-                  <span className="rounded-full bg-primary px-3 py-1 text-[11px] font-medium text-primary-foreground">
-                    Most popular
+                {t.badge && (
+                  <span className={`rounded-full px-3 py-1 text-[10px] sm:text-[11px] font-medium tracking-wide ${t.name === 'Ultra Pro' ? 'bg-indigo-500/10 text-indigo-500 border border-indigo-500/20' : 'bg-primary text-primary-foreground'}`}>
+                    {t.badge}
                   </span>
                 )}
               </div>
@@ -594,6 +631,23 @@ function Pricing() {
                 <span className="pb-1 text-xs text-muted-foreground">{t.note}</span>
               </p>
               <p className="mt-2 text-sm text-muted-foreground">{t.copy}</p>
+
+              {t.hasVoiceHighlight && (
+                <div className="relative mt-5 overflow-hidden rounded-xl border border-primary/20 bg-primary/5 p-4">
+                  <div className="absolute right-0 top-0 p-2 opacity-10">
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" x2="12" y1="19" y2="22"></line></svg>
+                  </div>
+                  <h4 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-primary"><Mic className="h-4 w-4"/> VOICE CONTROL</h4>
+                  <p className="mb-1 text-sm font-medium italic text-foreground">“Go to Slide 9”</p>
+                  <p className="mb-3 flex items-center gap-1.5 text-xs text-muted-foreground"><ArrowRight className="h-3 w-3"/> Instantly jump to Slide 9</p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    <span className="rounded-md border border-border bg-background px-2 py-1 text-[10px]">“Next slide”</span>
+                    <span className="rounded-md border border-border bg-background px-2 py-1 text-[10px]">“Previous slide”</span>
+                    <span className="rounded-md border border-border bg-background px-2 py-1 text-[10px]">“Go to Slide 15”</span>
+                  </div>
+                </div>
+              )}
+
               <Button
                 asChild
                 variant={t.highlight ? "default" : "outline"}
@@ -601,9 +655,9 @@ function Pricing() {
               >
                 <Link to="/present">{t.cta}</Link>
               </Button>
-              <ul className="mt-7 space-y-2.5">
+              <ul className={`mt-7 flex-grow space-y-2.5 ${t.hasVoiceHighlight ? 'border-t border-border/50 pt-5' : ''}`}>
                 {t.features.map((f) => (
-                  <li key={f} className="flex items-start gap-2.5 text-sm">
+                  <li key={f} className="flex items-start gap-2.5 text-[13px] leading-relaxed">
                     <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
                     <span className="text-foreground/90">{f}</span>
                   </li>
