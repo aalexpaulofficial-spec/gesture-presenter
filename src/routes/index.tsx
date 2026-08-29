@@ -4,6 +4,7 @@ import {
   ArrowRight,
   Check,
   ChevronDown,
+  Download,
   Expand,
   Gauge,
   Hand,
@@ -12,6 +13,7 @@ import {
   MonitorPlay,
   MousePointer2,
   Presentation,
+  Share,
   ShieldCheck,
   Smartphone,
   Sparkles,
@@ -19,6 +21,7 @@ import {
   Users,
   Zap,
 } from "lucide-react";
+import { usePWAInstall } from "@/hooks/usePWAInstall";
 import { Button } from "@/components/ui/button";
 import {
   Accordion,
@@ -60,6 +63,17 @@ const nav = [
 
 function Landing() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const { state, triggerInstall } = usePWAInstall();
+
+  function handleDownload() {
+    if (state === "available") {
+      triggerInstall();
+    } else {
+      alert("Your browser does not support the automatic install prompt, or the app is already installed.\n\nTo install manually:\n- On Chrome/Edge (Desktop): Click the install icon (a screen with a down arrow) in the right side of your address bar.\n- On Phone/Tablet: Tap the browser menu or share button and select 'Add to Home screen'.");
+    }
+  }
+
+  const showDownloadBtn = true;
 
   return (
     <div className="min-h-screen bg-background">
@@ -85,6 +99,17 @@ function Landing() {
           </nav>
 
           <div className="flex items-center gap-2">
+            {showDownloadBtn && (
+              <Button
+                id="header-free-download-btn"
+                size="sm"
+                variant="outline"
+                className="hidden rounded-full px-4 sm:flex"
+                onClick={handleDownload}
+              >
+                <Download className="mr-1.5 h-3.5 w-3.5" /> Free Download
+              </Button>
+            )}
             <Button asChild size="sm" className="rounded-full px-4">
               <Link to="/present">
                 Start presenting <ArrowRight className="ml-1 h-3.5 w-3.5" />
@@ -117,7 +142,7 @@ function Landing() {
       </header>
 
       <main id="top">
-        <Hero />
+        <Hero showDownloadBtn={showDownloadBtn} onDownload={handleDownload} />
         <Marquee />
         <HowItWorks />
         <Features />
@@ -140,7 +165,13 @@ function Landing() {
   );
 }
 
-function Hero() {
+function Hero({
+  showDownloadBtn,
+  onDownload,
+}: {
+  showDownloadBtn: boolean;
+  onDownload: () => void;
+}) {
   return (
     <section className="surface-hero relative overflow-hidden">
       <div className="mx-auto max-w-6xl px-5 pb-16 pt-16 sm:pt-24 lg:px-8">
@@ -161,12 +192,24 @@ function Hero() {
                 Upload a presentation <ArrowRight className="ml-1.5 h-4 w-4" />
               </Link>
             </Button>
-            <Button asChild size="lg" variant="outline" className="w-full rounded-full px-7 sm:w-auto">
-              <a href="#gestures">See the gestures</a>
-            </Button>
+            {showDownloadBtn ? (
+              <Button
+                id="hero-free-download-btn"
+                size="lg"
+                variant="outline"
+                className="w-full rounded-full px-7 sm:w-auto"
+                onClick={onDownload}
+              >
+                <Download className="mr-1.5 h-4 w-4" /> Free Download
+              </Button>
+            ) : (
+              <Button asChild size="lg" variant="outline" className="w-full rounded-full px-7 sm:w-auto">
+                <a href="#gestures">See the gestures</a>
+              </Button>
+            )}
           </div>
           <p className="mt-4 text-xs text-muted-foreground">
-            Free forever for hand control · No download · Works on laptop, tablet and phone
+            Free forever for hand control · Works offline after download · Laptop, tablet and phone
           </p>
         </div>
 

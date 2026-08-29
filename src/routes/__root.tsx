@@ -84,6 +84,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
+      { name: "mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-status-bar-style", content: "default" },
+      { name: "apple-mobile-web-app-title", content: "Gesture Presenter" },
+      { name: "theme-color", content: "#ffffff" },
     ],
     links: [
       {
@@ -97,6 +102,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         href: "https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap",
       },
       { rel: "icon", href: "/GESTURE PRESENTER LOGO DESIGN.png", type: "image/png" },
+      { rel: "apple-touch-icon", href: "/GESTURE PRESENTER LOGO DESIGN.png" },
+      { rel: "manifest", href: "/manifest.json" },
     ],
   }),
   shellComponent: RootShell,
