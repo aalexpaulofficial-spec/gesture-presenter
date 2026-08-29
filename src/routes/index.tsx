@@ -425,13 +425,13 @@ function GestureGuide() {
       emoji: "🖐️",
       title: "Open front palm",
       action: "Next slide",
-      copy: "Show your palm to the camera with fingers spread, then relax your hand.",
+      copy: "Show your palm to the camera with fingers spread. To advance again, close your hand into a fist, then open your palm again.",
     },
     {
       emoji: "🤚",
       title: "Back of hand",
       action: "Previous slide",
-      copy: "Turn your hand around so the back faces the camera to step backwards.",
+      copy: "Turn your hand around so the back faces the camera. To go back again, close your hand into a fist, then show the back of your hand again.",
     },
     {
       emoji: "☝️",
