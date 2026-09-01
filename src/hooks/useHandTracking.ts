@@ -100,6 +100,12 @@ export function useHandTracking({ enabled, onAction, onPointer }: Options) {
 
         const loop = () => {
           raf = requestAnimationFrame(loop);
+          
+          if (stream && (!stream.active || stream.getTracks().some(t => t.readyState === "ended"))) {
+            setAttempt((a) => a + 1);
+            return;
+          }
+
           const el = videoRef.current;
           if (!el || !landmarker || el.readyState < 2) return;
           const ts = el.currentTime * 1000;

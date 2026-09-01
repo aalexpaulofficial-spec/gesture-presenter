@@ -50,7 +50,8 @@ export function useVoiceControl({
 
   const processCommand = useCallback(
     (command: string): boolean => {
-      const lower = command.toLowerCase().trim();
+      // Normalize punctuation and extra spaces
+      const lower = command.toLowerCase().replace(/[.,!?;:]/g, "").replace(/\s+/g, " ").trim();
 
       // Navigation: "next slide"
       if (lower.includes("next slide")) {
@@ -68,10 +69,18 @@ export function useVoiceControl({
         return true;
       }
 
-      // Go to slide by number: "go to slide 4" OR "slide 4"
-      const slideMatch = lower.match(/(?:go to )?slide (\d+)/);
+      // Words to digits map for slide numbers
+      const wordsToNum: Record<string, number> = {
+        one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+        eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20
+      };
+
+      // Go to slide by number: "go to slide 4" OR "slide four"
+      const slideMatch = lower.match(/(?:go to )?slide (\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)/);
       if (slideMatch) {
-        onGoToSlide(parseInt(slideMatch[1], 10) - 1); // 0-indexed
+        const val = slideMatch[1];
+        const num = isNaN(Number(val)) ? wordsToNum[val] : parseInt(val, 10);
+        onGoToSlide(num - 1); // 0-indexed
         return true;
       }
 
@@ -89,21 +98,21 @@ export function useVoiceControl({
       }
 
       // Remove specific highlight: "remove highlight india"
-      const removeMatch = lower.match(/remove highlight (.+)/);
+      const removeMatch = lower.match(/remove highlight\s+(.+)/);
       if (removeMatch) {
         onRemoveHighlight(removeMatch[1].trim());
         return true;
       }
 
       // Highlight with color: "highlight india in red"
-      const colorMatch = lower.match(/highlight (.+?) in (yellow|red|green|blue)/);
+      const colorMatch = lower.match(/highlight\s+(.+?)\s+in\s+(yellow|red|green|blue)/);
       if (colorMatch) {
         onHighlight(colorMatch[1].trim(), colorMatch[2].trim());
         return true;
       }
 
       // Default highlight: "highlight india"
-      const highlightMatch = lower.match(/highlight (.+)/);
+      const highlightMatch = lower.match(/highlight\s+(.+)/);
       if (highlightMatch) {
         onHighlight(highlightMatch[1].trim(), "yellow");
         return true;

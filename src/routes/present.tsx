@@ -437,90 +437,61 @@ function HowToControl({ isPro }: { isPro: boolean }) {
       <DialogContent className="max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-display">
-            {isPro ? "Pro Controls — Hand + Voice" : "Control your slides with your hand"}
+            How to Control
           </DialogTitle>
           <DialogDescription>
-            {isPro
-              ? "Hand gestures and voice commands work at the same time."
-              : "Hold your hand about an arm's length from the camera in reasonable light."}
+            {isPro ? "Pro Controls — Hand + Camera + Voice" : "Hand + Camera"}
           </DialogDescription>
         </DialogHeader>
 
-        {/* Hand Controls — shown for both Free and Pro */}
         <div className="mt-1">
           <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            🤚 Hand + Camera
+            HAND + CAMERA
           </p>
           <ul className="space-y-3 text-sm">
             <li className="flex gap-3">
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary-soft text-lg">🖐️</span>
-              <span>
-                <strong className="font-display">Open front palm</strong> — move to the next slide.
-                Close fist first, then open palm again to advance further.
-              </span>
+              <span><strong>Open Front Palm</strong> → Next Slide</span>
             </li>
             <li className="flex gap-3">
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary-soft text-lg">🤚</span>
-              <span>
-                <strong className="font-display">Back of your hand</strong> — go to the previous slide.
-                Close fist first, then show the back of your hand again to go back further.
-              </span>
+              <span><strong>Close hand → reopen Front Palm</strong> → Next Slide again</span>
             </li>
             <li className="flex gap-3">
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary-soft text-lg">☝️</span>
-              <span>
-                <strong className="font-display">Raised index finger</strong> — a laser pointer follows
-                your fingertip across the whole slide.
-              </span>
+              <span><strong>Back of Hand</strong> → Previous Slide</span>
             </li>
             <li className="flex gap-3">
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary-soft text-lg">✊</span>
-              <span>
-                <strong className="font-display">Close hand into a fist</strong> — resets the gesture so
-                the same action can be triggered again without double-jumping.
-              </span>
+              <span><strong>Close hand → reopen Back of Hand</strong> → Previous Slide again</span>
+            </li>
+            <li className="flex gap-3">
+              <span><strong>Raised Index Finger</strong> → Laser Pointer</span>
             </li>
           </ul>
         </div>
 
-        {/* Voice Controls — Pro only */}
         {isPro && (
           <div className="mt-5 border-t border-border pt-4">
             <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              🎙️ Voice Commands
+              VOICE
             </p>
             <ul className="space-y-2.5 text-sm">
               {[
-                { cmd: "Next Slide",             desc: "Move to the next slide" },
-                { cmd: "Previous Slide",         desc: "Move to the previous slide" },
-                { cmd: "Slide 4",                desc: "Jump directly to slide 4" },
-                { cmd: "Go to Slide 8",          desc: "Jump directly to slide 8" },
-                { cmd: "Highlight India",        desc: "Highlight the word India on the current slide" },
-                { cmd: "Highlight India in red", desc: "Highlight in a color — yellow / red / green / blue" },
-                { cmd: "Remove Highlight India", desc: "Remove the highlight on India" },
-                { cmd: "Clear Highlights",       desc: "Remove all highlights on the current slide" },
+                { cmd: "Next Slide",             desc: "Next slide" },
+                { cmd: "Previous Slide",         desc: "Previous slide" },
+                { cmd: "Slide 4",                desc: "Jump to slide 4" },
+                { cmd: "Go to Slide 8",          desc: "Jump to slide 8" },
+                { cmd: "Highlight India",        desc: "Highlight India" },
+                { cmd: "Highlight India in red", desc: "Red highlight" },
+                { cmd: "Remove Highlight India", desc: "Remove India highlight" },
+                { cmd: "Clear Highlights",       desc: "Remove all highlights" },
               ].map(({ cmd, desc }) => (
                 <li key={cmd} className="flex items-start gap-3">
                   <span className="mt-0.5 shrink-0 rounded-md border border-border bg-secondary px-2 py-0.5 font-mono text-[11px] text-foreground whitespace-nowrap">
-                    "{cmd}"
+                    “{cmd}”
                   </span>
-                  <span className="text-muted-foreground">{desc}</span>
+                  <span className="text-muted-foreground">→ {desc}</span>
                 </li>
               ))}
             </ul>
-            <p className="mt-4 text-xs text-muted-foreground">
-              Voice recognition uses your browser's built-in Web Speech API — no internet or paid API
-              required. Speak clearly after the mic shows <strong>Listening...</strong> in green.
-            </p>
           </div>
-        )}
-
-        {!isPro && (
-          <p className="mt-4 text-xs text-muted-foreground">
-            Each palm gesture fires once. Closing your hand into a fist ✊ resets the gesture, so you
-            can never skip slides by accident. Fullscreen shows only your slide, and hand control keeps
-            working while you present.
-          </p>
         )}
       </DialogContent>
     </Dialog>

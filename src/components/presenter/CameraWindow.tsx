@@ -74,31 +74,29 @@ export function CameraWindow({ videoRef, status, error, gesture, handVisible, hi
           </button>
         </div>
 
-        {!minimized && (
-          <div className="relative h-[132px] w-[232px] bg-secondary">
-            <video
-              ref={videoRef}
-              autoPlay
-              muted
-              playsInline
-              className="h-full w-full scale-x-[-1] object-cover"
-            />
-            {status !== "live" && (
-              <div className="absolute inset-0 flex items-center justify-center px-3 text-center">
-                {status === "error" ? (
-                  <div className="space-y-2">
-                    <p className="text-[11px] leading-snug text-destructive">{error}</p>
-                    <Button size="sm" variant="secondary" className="h-7 text-[11px]" onClick={onRetry}>
-                      <RefreshCw className="mr-1 h-3 w-3" /> Try again
-                    </Button>
-                  </div>
-                ) : (
-                  <p className="text-[11px] text-muted-foreground">Starting your camera…</p>
-                )}
-              </div>
-            )}
-          </div>
-        )}
+        <div className={`relative h-[132px] w-[232px] bg-secondary ${minimized ? 'hidden' : ''}`}>
+          <video
+            ref={videoRef}
+            autoPlay
+            muted
+            playsInline
+            className="h-full w-full scale-x-[-1] object-cover"
+          />
+          {status !== "live" && (
+            <div className="absolute inset-0 flex items-center justify-center px-3 text-center">
+              {status === "error" ? (
+                <div className="space-y-2">
+                  <p className="text-[11px] leading-snug text-destructive">{error}</p>
+                  <Button size="sm" variant="secondary" className="h-7 text-[11px]" onClick={onRetry}>
+                    <RefreshCw className="mr-1 h-3 w-3" /> Try again
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-[11px] text-muted-foreground">Starting your camera…</p>
+              )}
+            </div>
+          )}
+        </div>
 
         <div className="flex items-center gap-2 border-t border-border px-3 py-2">
           <span
