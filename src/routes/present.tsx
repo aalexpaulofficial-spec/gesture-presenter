@@ -22,6 +22,8 @@ import { Progress } from "@/components/ui/progress";
 import { DeckStage } from "@/components/presenter/DeckStage";
 import { CameraWindow } from "@/components/presenter/CameraWindow";
 import { useHandTracking } from "@/hooks/useHandTracking";
+import { useVoiceControl, VoiceHighlight } from "@/hooks/useVoiceControl";
+import { Mic, MicOff, Sparkles } from "lucide-react";
 
 export const Route = createFileRoute("/present")({
   head: () => ({
@@ -42,6 +44,11 @@ export const Route = createFileRoute("/present")({
       { name: "robots", content: "noindex" },
     ],
   }),
+  validateSearch: (search: Record<string, unknown>): { pro?: boolean } => {
+    return {
+      pro: search.pro === true || search.pro === 'true',
+    }
+  },
   component: PresentPage,
 });
 
@@ -63,8 +70,15 @@ function PresentPage() {
   const [failure, setFailure] = useState<string | null>(null);
   const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const search = Route.useSearch();
+  const [isPro, setIsPro] = useState(search.pro || false);
+  const [metadata, setMetadata] = useState<any[] | null>(null);
+  const [highlights, setHighlights] = useState<VoiceHighlight[]>([]);
+  const [laserEnabled, setLaserEnabled] = useState(true);
+
   const stageWrapRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const fileRef = useRef<File | null>(null);
 
   const go = useCallback(
     (delta: number) => {
@@ -91,6 +105,7 @@ function PresentPage() {
       setPhase("failed");
       return;
     }
+    fileRef.current = file;
     setFileName(file.name);
     setFailure(null);
     setIndex(0);
@@ -100,11 +115,32 @@ function PresentPage() {
     const buf = await file.arrayBuffer();
     setProgress(45);
     setPhase("analyzing");
-    await new Promise((r) => setTimeout(r, 320));
+    
+    if (isPro) {
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+        const res = await fetch("http://localhost:8000/decks", {
+          method: "POST",
+          body: formData,
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setMetadata(data.slides);
+        } else {
+          console.error("Backend analysis failed", await res.text());
+        }
+      } catch (err) {
+        console.error("Backend error", err);
+      }
+    } else {
+      await new Promise((r) => setTimeout(r, 320));
+    }
+    
     setProgress(72);
     setPhase("preview");
     setBuffer(buf);
-  }, []);
+  }, [isPro]);
 
   const onReady = useCallback(({ slideCount: count }: { slideCount: number }) => {
     setSlideCount(count);
@@ -133,6 +169,76 @@ function PresentPage() {
     document.addEventListener("fullscreenchange", onChange);
     return () => document.removeEventListener("fullscreenchange", onChange);
   }, []);
+
+  // If user upgrades to Pro after uploading a file, fetch metadata retroactively.
+  useEffect(() => {
+    if (!isPro || metadata !== null || !fileRef.current) return;
+    const file = fileRef.current;
+    const formData = new FormData();
+    formData.append("file", file);
+    fetch("http://localhost:8000/decks", { method: "POST", body: formData })
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => { if (data?.slides) setMetadata(data.slides); })
+      .catch(() => {});
+  }, [isPro, metadata]);
+
+  const handleHighlight = useCallback((text: string, color: string) => {
+    if (!metadata || !metadata[index]) return;
+    const elements = metadata[index].text_elements || [];
+    const match = elements.find((e: any) => e.text.toLowerCase().includes(text.toLowerCase()));
+    if (match) {
+      setHighlights(prev => [...prev, {
+        id: Math.random().toString(),
+        text: match.text,
+        color,
+        box: { left: match.left, top: match.top, width: match.width, height: match.height }
+      }]);
+    }
+  }, [metadata, index]);
+
+  const handleRemoveHighlight = useCallback((text: string) => {
+    setHighlights(prev => prev.filter(h => !h.text.toLowerCase().includes(text.toLowerCase())));
+  }, []);
+
+  const handleClearHighlights = useCallback(() => {
+    setHighlights([]);
+  }, []);
+
+  const handleGoToSlideByText = useCallback((text: string) => {
+    if (!metadata) return;
+    const lowerText = text.toLowerCase();
+    
+    const matchingSlideIndex = metadata.findIndex((slide: any) => {
+      if (slide.title && slide.title.toLowerCase().includes(lowerText)) return true;
+      if (slide.text_elements) {
+        return slide.text_elements.some((el: any) => el.text.toLowerCase().includes(lowerText));
+      }
+      return false;
+    });
+
+    if (matchingSlideIndex !== -1) {
+      setIndex(matchingSlideIndex);
+    }
+  }, [metadata]);
+
+  const { isListening, status: voiceStatus, transcript, supported } = useVoiceControl({
+    enabled: isPro && (phase === "preview" || phase === "ready"),
+    onNext: () => go(1),
+    onPrev: () => go(-1),
+    onGoToSlide: (slide: number) => {
+      const max = Math.max(0, slideCount - 1);
+      setIndex(Math.min(max, Math.max(0, slide)));
+    },
+    onHighlight: handleHighlight,
+    onRemoveHighlight: handleRemoveHighlight,
+    onClearHighlights: handleClearHighlights,
+    onGoToSlideByText: handleGoToSlideByText
+  });
+
+  // Clear highlights when slide changes
+  useEffect(() => {
+    setHighlights([]);
+  }, [index]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -163,8 +269,24 @@ function PresentPage() {
               </span>
               PPT Hand Control
             </Link>
+            {isPro ? (
+              <span className="ml-2 inline-flex items-center rounded-full bg-primary/20 px-2.5 py-0.5 text-xs font-semibold text-primary">
+                PRO
+              </span>
+            ) : (
+              <span className="ml-2 inline-flex items-center rounded-full bg-secondary px-2.5 py-0.5 text-xs font-semibold text-muted-foreground border border-border">
+                FREE
+              </span>
+            )}
           </div>
-          <span className="max-w-[45vw] truncate text-xs text-muted-foreground">{fileName}</span>
+          <div className="flex items-center gap-4">
+            <span className="max-w-[30vw] truncate text-xs text-muted-foreground">{fileName}</span>
+            {!isPro && phase === "upload" && (
+              <Button size="sm" variant="outline" onClick={() => setIsPro(true)}>
+                <Sparkles className="mr-1.5 h-3.5 w-3.5" /> Upgrade to Pro
+              </Button>
+            )}
+          </div>
         </header>
       )}
 
@@ -213,7 +335,8 @@ function PresentPage() {
               <DeckStage
                 buffer={buffer}
                 index={index}
-                pointer={pointer}
+                pointer={laserEnabled ? pointer : null}
+                highlights={highlights}
                 onReady={onReady}
                 onError={onDeckError}
               />
@@ -242,8 +365,45 @@ function PresentPage() {
               <Button onClick={() => void toggleFullscreen()}>
                 <Maximize className="mr-1 h-4 w-4" /> Enter Fullscreen
               </Button>
-              <HowToControl />
-              <span className="ml-1 text-xs text-muted-foreground">
+              <HowToControl isPro={isPro} />
+              {isPro && (
+                <div className="flex items-center gap-2 ml-2">
+                  {!supported ? (
+                    <div className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium border border-destructive/50 bg-destructive/10 text-destructive">
+                      <MicOff className="h-3.5 w-3.5" />
+                      Voice not supported in this browser
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-1 items-start justify-center">
+                      <div className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium border transition-colors ${
+                        voiceStatus === 'listening'   ? 'border-primary/50 bg-primary/10 text-primary' :
+                        voiceStatus === 'recognizing' ? 'border-amber-500/50 bg-amber-500/10 text-amber-600' :
+                        voiceStatus === 'executed'    ? 'border-green-500/50 bg-green-500/10 text-green-600' :
+                        voiceStatus === 'not_recognized' ? 'border-amber-500/50 bg-amber-500/10 text-amber-600' :
+                        voiceStatus === 'permission_denied' || voiceStatus === 'error' ? 'border-destructive/50 bg-destructive/10 text-destructive' :
+                        'border-border bg-card text-muted-foreground'
+                      }`}>
+                        {isListening
+                          ? <Mic className="h-3.5 w-3.5 animate-pulse" />
+                          : <MicOff className="h-3.5 w-3.5" />}
+                        {voiceStatus === 'listening'  ? 'Listening...' :
+                         voiceStatus === 'recognizing'? 'Recognizing...' :
+                         voiceStatus === 'executed'   ? 'Command executed' :
+                         voiceStatus === 'not_recognized' ? 'Command not recognized' :
+                         voiceStatus === 'permission_denied' ? 'Permission denied' :
+                         voiceStatus === 'error'      ? 'Mic Error' :
+                         'Ready'}
+                      </div>
+                      {transcript && (
+                        <div className="text-xs text-muted-foreground italic px-2 max-w-[200px] truncate">
+                          "{transcript}"
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+              <span className="ml-auto text-xs text-muted-foreground">
                 {slideCount ? `${index + 1} / ${slideCount}` : ""}
               </span>
             </div>
@@ -266,7 +426,7 @@ function PresentPage() {
   );
 }
 
-function HowToControl() {
+function HowToControl({ isPro }: { isPro: boolean }) {
   return (
     <Dialog>
       <DialogTrigger asChild>
@@ -274,41 +434,94 @@ function HowToControl() {
           <HelpCircle className="mr-1 h-4 w-4" /> How to Control
         </Button>
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="font-display">Control your slides with your hand</DialogTitle>
+          <DialogTitle className="font-display">
+            {isPro ? "Pro Controls — Hand + Voice" : "Control your slides with your hand"}
+          </DialogTitle>
           <DialogDescription>
-            Hold your hand about an arm's length from the camera in reasonable light.
+            {isPro
+              ? "Hand gestures and voice commands work at the same time."
+              : "Hold your hand about an arm's length from the camera in reasonable light."}
           </DialogDescription>
         </DialogHeader>
-        <ul className="space-y-4 text-sm">
-          <li className="flex gap-3">
-            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary-soft text-lg">🖐️</span>
-            <span>
-              <strong className="font-display">Open front palm</strong> — move to the next slide. To go
-              forward again, close your hand into a fist first, then open your front palm again.
-            </span>
-          </li>
-          <li className="flex gap-3">
-            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary-soft text-lg">🤚</span>
-            <span>
-              <strong className="font-display">Back of your hand</strong> — go to the previous slide. To
-              go back again, close your hand into a fist first, then show the back of your hand again.
-            </span>
-          </li>
-          <li className="flex gap-3">
-            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary-soft text-lg">☝️</span>
-            <span>
-              <strong className="font-display">Raised index finger</strong> — a laser pointer follows your
-              fingertip across the whole slide.
-            </span>
-          </li>
-        </ul>
-        <p className="text-xs text-muted-foreground">
-          Each palm gesture fires once. Closing your hand into a fist ✊ resets the gesture, so you can
-          never skip slides by accident. Fullscreen shows only your slide, and hand control keeps
-          working while you present.
-        </p>
+
+        {/* Hand Controls — shown for both Free and Pro */}
+        <div className="mt-1">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            🤚 Hand + Camera
+          </p>
+          <ul className="space-y-3 text-sm">
+            <li className="flex gap-3">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary-soft text-lg">🖐️</span>
+              <span>
+                <strong className="font-display">Open front palm</strong> — move to the next slide.
+                Close fist first, then open palm again to advance further.
+              </span>
+            </li>
+            <li className="flex gap-3">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary-soft text-lg">🤚</span>
+              <span>
+                <strong className="font-display">Back of your hand</strong> — go to the previous slide.
+                Close fist first, then show the back of your hand again to go back further.
+              </span>
+            </li>
+            <li className="flex gap-3">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary-soft text-lg">☝️</span>
+              <span>
+                <strong className="font-display">Raised index finger</strong> — a laser pointer follows
+                your fingertip across the whole slide.
+              </span>
+            </li>
+            <li className="flex gap-3">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary-soft text-lg">✊</span>
+              <span>
+                <strong className="font-display">Close hand into a fist</strong> — resets the gesture so
+                the same action can be triggered again without double-jumping.
+              </span>
+            </li>
+          </ul>
+        </div>
+
+        {/* Voice Controls — Pro only */}
+        {isPro && (
+          <div className="mt-5 border-t border-border pt-4">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              🎙️ Voice Commands
+            </p>
+            <ul className="space-y-2.5 text-sm">
+              {[
+                { cmd: "Next Slide",             desc: "Move to the next slide" },
+                { cmd: "Previous Slide",         desc: "Move to the previous slide" },
+                { cmd: "Slide 4",                desc: "Jump directly to slide 4" },
+                { cmd: "Go to Slide 8",          desc: "Jump directly to slide 8" },
+                { cmd: "Highlight India",        desc: "Highlight the word India on the current slide" },
+                { cmd: "Highlight India in red", desc: "Highlight in a color — yellow / red / green / blue" },
+                { cmd: "Remove Highlight India", desc: "Remove the highlight on India" },
+                { cmd: "Clear Highlights",       desc: "Remove all highlights on the current slide" },
+              ].map(({ cmd, desc }) => (
+                <li key={cmd} className="flex items-start gap-3">
+                  <span className="mt-0.5 shrink-0 rounded-md border border-border bg-secondary px-2 py-0.5 font-mono text-[11px] text-foreground whitespace-nowrap">
+                    "{cmd}"
+                  </span>
+                  <span className="text-muted-foreground">{desc}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-4 text-xs text-muted-foreground">
+              Voice recognition uses your browser's built-in Web Speech API — no internet or paid API
+              required. Speak clearly after the mic shows <strong>Listening...</strong> in green.
+            </p>
+          </div>
+        )}
+
+        {!isPro && (
+          <p className="mt-4 text-xs text-muted-foreground">
+            Each palm gesture fires once. Closing your hand into a fist ✊ resets the gesture, so you
+            can never skip slides by accident. Fullscreen shows only your slide, and hand control keeps
+            working while you present.
+          </p>
+        )}
       </DialogContent>
     </Dialog>
   );

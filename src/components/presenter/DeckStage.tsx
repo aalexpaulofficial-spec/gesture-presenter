@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { VoiceHighlight } from "@/hooks/useVoiceControl";
 
 type Previewer = {
   load: (buf: ArrayBuffer) => Promise<{ width: number; height: number; slides: unknown[] }>;
@@ -11,11 +12,12 @@ type Props = {
   buffer: ArrayBuffer;
   index: number;
   pointer: { x: number; y: number } | null;
+  highlights?: VoiceHighlight[];
   onReady: (info: { slideCount: number }) => void;
   onError: (message: string) => void;
 };
 
-export function DeckStage({ buffer, index, pointer, onReady, onError }: Props) {
+export function DeckStage({ buffer, index, pointer, highlights = [], onReady, onError }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const previewerRef = useRef<Previewer | null>(null);
@@ -115,6 +117,22 @@ export function DeckStage({ buffer, index, pointer, onReady, onError }: Props) {
             <span className="block h-4 w-4 rounded-full bg-[oklch(0.62_0.24_25)] shadow-[0_0_22px_10px_oklch(0.62_0.24_25/0.45)]" />
           </div>
         ) : null}
+        
+        {/* Voice highlights */}
+        {highlights.map((h) => (
+          <div
+            key={h.id}
+            className="pointer-events-none absolute z-20 border-2 rounded-sm transition-all duration-300"
+            style={{
+              left: `${h.box.left * 100}%`,
+              top: `${h.box.top * 100}%`,
+              width: `${h.box.width * 100}%`,
+              height: `${h.box.height * 100}%`,
+              borderColor: h.color,
+              backgroundColor: `${h.color === 'yellow' ? 'rgba(255, 255, 0, 0.3)' : h.color === 'red' ? 'rgba(255, 0, 0, 0.3)' : h.color === 'green' ? 'rgba(0, 255, 0, 0.3)' : h.color === 'blue' ? 'rgba(0, 0, 255, 0.3)' : 'rgba(255, 255, 0, 0.3)'}`,
+            }}
+          />
+        ))}
       </div>
     </div>
   );

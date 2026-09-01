@@ -519,6 +519,8 @@ function Pricing() {
       note: "forever",
       copy: "Everything you need to present hands-free.",
       cta: "Start presenting",
+      link: "/present" as const,
+      search: {} as Record<string, unknown>,
       badge: null,
       highlight: false,
       features: [
@@ -541,6 +543,8 @@ function Pricing() {
       note: "per month",
       copy: "For presenters who want hands + voice.",
       cta: "Upgrade to Pro",
+      link: "/present" as const,
+      search: { pro: true } as Record<string, unknown>,
       badge: "MOST POPULAR",
       highlight: true,
       hasVoiceHighlight: true,
@@ -562,6 +566,8 @@ function Pricing() {
       note: "per month",
       copy: "AI-powered presentation intelligence.",
       cta: "Upgrade to Ultra Pro",
+      link: "/present" as const,
+      search: { pro: true } as Record<string, unknown>,
       badge: "POWERED BY VEYRA AI",
       highlight: false,
       features: [
@@ -588,6 +594,8 @@ function Pricing() {
       note: "per team",
       copy: "For teams and organisations presenting at scale.",
       cta: "Talk to us",
+      link: "/present" as const,
+      search: {} as Record<string, unknown>,
       badge: null,
       highlight: false,
       features: [
@@ -653,7 +661,7 @@ function Pricing() {
                 variant={t.highlight ? "default" : "outline"}
                 className="mt-6 w-full rounded-full"
               >
-                <Link to="/present">{t.cta}</Link>
+                <Link to={t.link} search={t.search}>{t.cta}</Link>
               </Button>
               <ul className={`mt-7 flex-grow space-y-2.5 ${t.hasVoiceHighlight ? 'border-t border-border/50 pt-5' : ''}`}>
                 {t.features.map((f) => (

@@ -38,15 +38,35 @@ def analyse_presentation(stream: IO[bytes]) -> dict[str, Any]:
     width = Emu(presentation.slide_width or 0) / EMU_PER_POINT
     height = Emu(presentation.slide_height or 0) / EMU_PER_POINT
 
-    slides = [
-        {
+    slides = []
+    for index, slide in enumerate(presentation.slides):
+        text_elements = []
+        for shape in slide.shapes:
+            if getattr(shape, "has_text_frame", False):
+                text = shape.text_frame.text.strip()
+                if text:
+                    try:
+                        left = float(Emu(shape.left) / EMU_PER_POINT / float(width)) if shape.left else 0.0
+                        top = float(Emu(shape.top) / EMU_PER_POINT / float(height)) if shape.top else 0.0
+                        w = float(Emu(shape.width) / EMU_PER_POINT / float(width)) if shape.width else 0.0
+                        h = float(Emu(shape.height) / EMU_PER_POINT / float(height)) if shape.height else 0.0
+                        text_elements.append({
+                            "text": text,
+                            "left": left,
+                            "top": top,
+                            "width": w,
+                            "height": h,
+                        })
+                    except Exception:
+                        pass
+        
+        slides.append({
             "index": index,
             "title": _slide_title(slide),
             "shape_count": len(slide.shapes),
             "notes": _notes(slide),
-        }
-        for index, slide in enumerate(presentation.slides)
-    ]
+            "text_elements": text_elements,
+        })
 
     return {
         "slide_count": len(slides),

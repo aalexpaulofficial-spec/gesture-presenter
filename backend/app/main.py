@@ -34,11 +34,19 @@ app.add_middleware(
 store = DeckStore()
 
 
+class TextElement(BaseModel):
+    text: str
+    left: float
+    top: float
+    width: float
+    height: float
+
 class SlideInfo(BaseModel):
     index: int
     title: str | None = None
     shape_count: int
     notes: str | None = None
+    text_elements: list[TextElement] = []
 
 
 class DeckResponse(BaseModel):
