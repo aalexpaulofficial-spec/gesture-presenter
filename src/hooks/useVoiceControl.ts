@@ -48,14 +48,37 @@ export function useVoiceControl({
   const enabledRef = useRef(enabled);
   enabledRef.current = enabled;
 
+  const callbacksRef = useRef({
+    onNext,
+    onPrev,
+    onGoToSlide,
+    onHighlight,
+    onRemoveHighlight,
+    onClearHighlights,
+    onGoToSlideByText,
+  });
+
+  useEffect(() => {
+    callbacksRef.current = {
+      onNext,
+      onPrev,
+      onGoToSlide,
+      onHighlight,
+      onRemoveHighlight,
+      onClearHighlights,
+      onGoToSlideByText,
+    };
+  }, [onNext, onPrev, onGoToSlide, onHighlight, onRemoveHighlight, onClearHighlights, onGoToSlideByText]);
+
   const processCommand = useCallback(
     (command: string): boolean => {
+      const callbacks = callbacksRef.current;
       // Normalize punctuation and extra spaces
       const lower = command.toLowerCase().replace(/[.,!?;:]/g, "").replace(/\s+/g, " ").trim();
 
       // Navigation: "next slide"
       if (lower.includes("next slide")) {
-        onNext();
+        callbacks.onNext();
         return true;
       }
 
@@ -65,7 +88,7 @@ export function useVoiceControl({
         lower.includes("last slide") ||
         lower.includes("prev slide")
       ) {
-        onPrev();
+        callbacks.onPrev();
         return true;
       }
 
@@ -80,41 +103,41 @@ export function useVoiceControl({
       if (slideMatch) {
         const val = slideMatch[1];
         const num = isNaN(Number(val)) ? wordsToNum[val] : parseInt(val, 10);
-        onGoToSlide(num - 1); // 0-indexed
+        callbacks.onGoToSlide(num - 1); // 0-indexed
         return true;
       }
 
       // Go to slide by title text: "go to the introduction slide"
       const textSlideMatch = lower.match(/go to the (.+?) slide/);
       if (textSlideMatch) {
-        onGoToSlideByText(textSlideMatch[1].trim());
+        callbacks.onGoToSlideByText(textSlideMatch[1].trim());
         return true;
       }
 
       // Clear all highlights
       if (lower.includes("clear highlights") || lower.includes("clear all highlights")) {
-        onClearHighlights();
+        callbacks.onClearHighlights();
         return true;
       }
 
       // Remove specific highlight: "remove highlight india"
       const removeMatch = lower.match(/remove highlight\s+(.+)/);
       if (removeMatch) {
-        onRemoveHighlight(removeMatch[1].trim());
+        callbacks.onRemoveHighlight(removeMatch[1].trim());
         return true;
       }
 
       // Highlight with color: "highlight india in red"
       const colorMatch = lower.match(/highlight\s+(.+?)\s+in\s+(yellow|red|green|blue)/);
       if (colorMatch) {
-        onHighlight(colorMatch[1].trim(), colorMatch[2].trim());
+        callbacks.onHighlight(colorMatch[1].trim(), colorMatch[2].trim());
         return true;
       }
 
       // Default highlight: "highlight india"
       const highlightMatch = lower.match(/highlight\s+(.+)/);
       if (highlightMatch) {
-        onHighlight(highlightMatch[1].trim(), "yellow");
+        callbacks.onHighlight(highlightMatch[1].trim(), "yellow");
         return true;
       }
 
@@ -123,11 +146,13 @@ export function useVoiceControl({
 
       return false; // command not recognized
     },
-    [onNext, onPrev, onGoToSlide, onGoToSlideByText, onHighlight, onRemoveHighlight, onClearHighlights]
+    [] // No dependencies since it uses callbacksRef
   );
 
   useEffect(() => {
-    if (!supported || !enabled) {
+    if (!supported) return;
+
+    if (!enabled) {
       if (recognitionRef.current) {
         try { recognitionRef.current.stop(); } catch (e) { }
       }
@@ -193,6 +218,7 @@ export function useVoiceControl({
           return;
         }
         setStatus("error");
+        setIsListening(false);
       };
 
       recognition.onend = () => {
@@ -216,11 +242,19 @@ export function useVoiceControl({
     }
 
     return () => {
+      // Only cleanup on unmount, not on every render.
+      // If enabled becomes false, the early return above handles stopping.
+    };
+  }, [enabled, supported, processCommand, isListening]);
+  
+  // Cleanup entirely on unmount
+  useEffect(() => {
+    return () => {
       if (recognitionRef.current) {
         try { recognitionRef.current.stop(); } catch (e) { }
       }
     };
-  }, [enabled, supported, processCommand]);
+  }, []);
 
   return {
     supported,
@@ -229,3 +263,4 @@ export function useVoiceControl({
     status,
   };
 }
+
