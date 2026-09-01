@@ -227,7 +227,9 @@ function PresentPage() {
     onPrev: () => go(-1),
     onGoToSlide: (slide: number) => {
       const max = Math.max(0, slideCount - 1);
-      setIndex(Math.min(max, Math.max(0, slide)));
+      if (slide < 0 || slide > max) return false;
+      setIndex(slide);
+      return true;
     },
     onHighlight: handleHighlight,
     onRemoveHighlight: handleRemoveHighlight,
@@ -380,6 +382,7 @@ function PresentPage() {
                         voiceStatus === 'recognizing' ? 'border-amber-500/50 bg-amber-500/10 text-amber-600' :
                         voiceStatus === 'executed'    ? 'border-green-500/50 bg-green-500/10 text-green-600' :
                         voiceStatus === 'not_recognized' ? 'border-amber-500/50 bg-amber-500/10 text-amber-600' :
+                        voiceStatus === 'slide_not_found' ? 'border-amber-500/50 bg-amber-500/10 text-amber-600' :
                         voiceStatus === 'permission_denied' || voiceStatus === 'error' ? 'border-destructive/50 bg-destructive/10 text-destructive' :
                         'border-border bg-card text-muted-foreground'
                       }`}>
@@ -390,6 +393,7 @@ function PresentPage() {
                          voiceStatus === 'recognizing'? 'Recognizing...' :
                          voiceStatus === 'executed'   ? 'Command executed' :
                          voiceStatus === 'not_recognized' ? 'Command not recognized' :
+                         voiceStatus === 'slide_not_found'? 'Slide not found' :
                          voiceStatus === 'permission_denied' ? 'Permission denied' :
                          voiceStatus === 'error'      ? 'Mic Error' :
                          'Ready'}
@@ -476,7 +480,7 @@ function HowToControl({ isPro }: { isPro: boolean }) {
               {[
                 { cmd: "Next Slide",             desc: "Next slide" },
                 { cmd: "Previous Slide",         desc: "Previous slide" },
-                { cmd: "Slide 4",                desc: "Jump to slide 4" },
+                { cmd: "4",                      desc: "Jump to slide 4" },
                 { cmd: "Go to Slide 8",          desc: "Jump to slide 8" },
                 { cmd: "Highlight India",        desc: "Highlight India" },
                 { cmd: "Highlight India in red", desc: "Red highlight" },

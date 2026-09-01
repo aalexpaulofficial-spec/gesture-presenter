@@ -16,6 +16,7 @@ export type VoiceStatus =
   | "recognizing"
   | "executed"
   | "not_recognized"
+  | "slide_not_found"
   | "permission_denied"
   | "error";
 
@@ -23,7 +24,7 @@ type UseVoiceControlProps = {
   enabled: boolean;
   onNext: () => void;
   onPrev: () => void;
-  onGoToSlide: (slide: number) => void;
+  onGoToSlide: (slide: number) => boolean | void;
   onHighlight: (text: string, color: string) => void;
   onRemoveHighlight: (text: string) => void;
   onClearHighlights: () => void;
@@ -71,7 +72,7 @@ export function useVoiceControl({
   }, [onNext, onPrev, onGoToSlide, onHighlight, onRemoveHighlight, onClearHighlights, onGoToSlideByText]);
 
   const processCommand = useCallback(
-    (command: string): boolean => {
+    (command: string): boolean | string => {
       const callbacks = callbacksRef.current;
       // Normalize punctuation and extra spaces
       const lower = command.toLowerCase().replace(/[.,!?;:]/g, "").replace(/\s+/g, " ").trim();
@@ -103,8 +104,17 @@ export function useVoiceControl({
       if (slideMatch) {
         const val = slideMatch[1];
         const num = isNaN(Number(val)) ? wordsToNum[val] : parseInt(val, 10);
-        callbacks.onGoToSlide(num - 1); // 0-indexed
-        return true;
+        const success = callbacks.onGoToSlide(num - 1); // 0-indexed
+        return success === false ? "slide_not_found" : true;
+      }
+
+      // Exact number only: "4" OR "four"
+      const exactNumMatch = lower.match(/^(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)$/);
+      if (exactNumMatch) {
+        const val = exactNumMatch[1];
+        const num = isNaN(Number(val)) ? wordsToNum[val] : parseInt(val, 10);
+        const success = callbacks.onGoToSlide(num - 1); // 0-indexed
+        return success === false ? "slide_not_found" : true;
       }
 
       // Go to slide by title text: "go to the introduction slide"
@@ -198,8 +208,12 @@ export function useVoiceControl({
 
         // Only process final results as commands
         if (finalTranscript.trim()) {
-          const executed = processCommand(finalTranscript.trim());
-          setStatus(executed ? "executed" : "not_recognized");
+          const result = processCommand(finalTranscript.trim());
+          if (result === "slide_not_found") {
+            setStatus("slide_not_found");
+          } else {
+            setStatus(result ? "executed" : "not_recognized");
+          }
           // Return to listening after 2s
           setTimeout(() => {
             if (enabledRef.current) setStatus("listening");
