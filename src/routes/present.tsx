@@ -116,31 +116,12 @@ function PresentPage() {
     setProgress(45);
     setPhase("analyzing");
     
-    if (isPro) {
-      try {
-        const formData = new FormData();
-        formData.append("file", file);
-        const res = await fetch("http://localhost:8000/decks", {
-          method: "POST",
-          body: formData,
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setMetadata(data.slides);
-        } else {
-          console.error("Backend analysis failed", await res.text());
-        }
-      } catch (err) {
-        console.error("Backend error", err);
-      }
-    } else {
-      await new Promise((r) => setTimeout(r, 320));
-    }
-    
+    await new Promise((r) => setTimeout(r, 220));
+
     setProgress(72);
     setPhase("preview");
     setBuffer(buf);
-  }, [isPro]);
+  }, []);
 
   const onReady = useCallback(({ slideCount: count }: { slideCount: number }) => {
     setSlideCount(count);
