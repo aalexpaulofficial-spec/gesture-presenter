@@ -151,29 +151,47 @@ function PresentPage() {
     return () => document.removeEventListener("fullscreenchange", onChange);
   }, []);
 
-  // If user upgrades to Pro after uploading a file, fetch metadata retroactively.
+  // Pro: read the uploaded deck's text boxes in the browser so voice
+  // highlighting targets the real slide content. The file is never modified.
   useEffect(() => {
-    if (!isPro || metadata !== null || !fileRef.current) return;
-    const file = fileRef.current;
-    const formData = new FormData();
-    formData.append("file", file);
-    fetch("http://localhost:8000/decks", { method: "POST", body: formData })
-      .then((res) => res.ok ? res.json() : null)
-      .then((data) => { if (data?.slides) setMetadata(data.slides); })
-      .catch(() => {});
-  }, [isPro, metadata]);
+    if (!isPro || !buffer || metadata !== null) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { extractSlideText } = await import("@/lib/pptx-text");
+        const slides = await extractSlideText(buffer);
+        if (!cancelled) setMetadata(slides);
+      } catch {
+        if (!cancelled) setMetadata([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isPro, buffer, metadata]);
 
   const handleHighlight = useCallback((text: string, color: string) => {
-    if (!metadata || !metadata[index]) return;
-    const elements = metadata[index].text_elements || [];
-    const match = elements.find((e: any) => e.text.toLowerCase().includes(text.toLowerCase()));
+    const slide = metadata?.[index];
+    if (!slide) return;
+    const elements: any[] = slide.text_elements || [];
+    const needle = text.toLowerCase().trim();
+    const match =
+      elements.find((e) => e.text.toLowerCase().includes(needle)) ??
+      elements.find((e) =>
+        needle
+          .split(" ")
+          .some((word) => word.length > 2 && e.text.toLowerCase().includes(word)),
+      );
     if (match) {
-      setHighlights(prev => [...prev, {
-        id: Math.random().toString(),
-        text: match.text,
-        color,
-        box: { left: match.left, top: match.top, width: match.width, height: match.height }
-      }]);
+      setHighlights((prev) => [
+        ...prev,
+        {
+          id: Math.random().toString(36).slice(2),
+          text: match.text,
+          color,
+          box: { left: match.left, top: match.top, width: match.width, height: match.height },
+        },
+      ]);
     }
   }, [metadata, index]);
 
