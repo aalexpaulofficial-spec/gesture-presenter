@@ -31,10 +31,34 @@ type UseVoiceControlProps = {
 };
 
 const WORDS_TO_NUM: Record<string, number> = {
-  one: 1, won: 1, two: 2, to: 2, too: 2, three: 3, tree: 3, four: 4, for: 4, fore: 4,
-  five: 5, six: 6, sex: 6, seven: 7, eight: 8, ate: 8, nine: 9, ten: 10, eleven: 11,
-  twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17,
-  eighteen: 18, nineteen: 19, twenty: 20,
+  one: 1,
+  won: 1,
+  two: 2,
+  to: 2,
+  too: 2,
+  three: 3,
+  tree: 3,
+  four: 4,
+  for: 4,
+  fore: 4,
+  five: 5,
+  six: 6,
+  sex: 6,
+  seven: 7,
+  eight: 8,
+  ate: 8,
+  nine: 9,
+  ten: 10,
+  eleven: 11,
+  twelve: 12,
+  thirteen: 13,
+  fourteen: 14,
+  fifteen: 15,
+  sixteen: 16,
+  seventeen: 17,
+  eighteen: 18,
+  nineteen: 19,
+  twenty: 20,
 };
 
 const NUM_WORDS = Object.keys(WORDS_TO_NUM).join("|");
@@ -48,6 +72,19 @@ function toNumber(raw: string): number | null {
 
 const COLORS = ["yellow", "red", "green", "blue"];
 
+/**
+ * A command that the utterance resolved to. Resolution is PURE — nothing is
+ * executed until the confidence gate in the recognition handler passes.
+ */
+type ResolvedCommand =
+  | { kind: "next" }
+  | { kind: "prev" }
+  | { kind: "slide"; n: number }
+  | { kind: "highlight"; text: string; color: string }
+  | { kind: "removeHighlight"; text: string }
+  | { kind: "clearHighlights" }
+  | { kind: "slideByText"; text: string };
+
 function normalise(input: string): string {
   return input
     .toLowerCase()
@@ -56,19 +93,88 @@ function normalise(input: string): string {
     .trim();
 }
 
-/** Speech-tolerance: fold common mis-recognitions into canonical wording. */
+/**
+ * Speech-tolerance: fold common mis-recognitions into canonical wording.
+ * Only single-word folds are safe here — navigation matching is exact, so a
+ * fold that maps unrelated words onto "next"/"previous" would create false
+ * triggers. Keep this list conservative.
+ */
 function canonicalise(text: string): string {
   return text
-    .replace(/\b(nekst|nexts|neck's|nex|net)\b/g, "next")
-    .replace(/\b(prev|pre|previews|previously|prevous|preview)\b/g, "previous")
+    .replace(/\b(nekst|nexts|neck's|nex)\b/g, "next")
+    .replace(/\b(prev|previews|prevous|preveous)\b/g, "previous")
     .replace(/\b(slides|slid|slyde|sled|slade)\b/g, "slide")
     .replace(/\b(hilight|highlite|high light|highlights?)\b/g, "highlight")
     .replace(/\b(clean|cleared|clears)\b/g, "clear")
-    .replace(/\bgo to the\b/g, "go to the")
     .replace(/\bgoto\b/g, "go to")
-    .replace(/\bgo two\b/g, "go to")
     .replace(/\bremoved\b/g, "remove")
     .trim();
+}
+
+/**
+ * Strict command resolution. The WHOLE utterance must resolve to a command —
+ * a sentence that merely contains the word "next" (or a number) never
+ * triggers anything.
+ */
+function resolveCommand(raw: string): ResolvedCommand | null {
+  const lower = canonicalise(normalise(raw));
+  if (!lower) return null;
+
+  // Exact navigation: only a bare "next" / "next slide" / "previous" / "previous slide".
+  if (/^(?:next|next slide|next one)$/.test(lower)) return { kind: "next" };
+  if (/^(?:previous|previous slide|back one)$/.test(lower)) return { kind: "prev" };
+
+  // Whole utterance is a number: "4", "four", "slide 4", "slide number 8".
+  const bare = lower.match(new RegExp(`^(?:slide |slide number )?(\\d{1,3}|${NUM_WORDS})$`));
+  if (bare?.[1]) {
+    const n = toNumber(bare[1]);
+    if (n != null) return { kind: "slide", n };
+  }
+
+  // "go to slide 8" / "jump to slide 8" / "go to the eighth slide" — anchored.
+  const numbered = lower.match(
+    new RegExp(
+      `^(?:go|jump|move|show|open)\\s+(?:to\\s+)?(?:the\\s+)?slide\\s*(?:number\\s*)?(\\d{1,3}|${NUM_WORDS})$`,
+    ),
+  );
+  if (numbered?.[1]) {
+    const n = toNumber(numbered[1]);
+    if (n != null) return { kind: "slide", n };
+  }
+
+  // Clear all highlights.
+  if (/^(?:clear|clear all|remove all|remove every)(?: the)? highlights?$/.test(lower)) {
+    return { kind: "clearHighlights" };
+  }
+
+  // Remove a specific highlight: "remove highlight india".
+  const remove = lower.match(/^remove (?:the )?highlight (?:from |on |of )?(.+)$/);
+  if (remove?.[1]) {
+    return { kind: "removeHighlight", text: remove[1].trim() };
+  }
+
+  // Highlight with a colour: "highlight india in red".
+  const colored = lower.match(
+    new RegExp(`^highlight (?:the )?(.+?) (?:in|with|using) (${COLORS.join("|")})$`),
+  );
+  if (colored?.[1] && colored[2]) {
+    return { kind: "highlight", text: colored[1].trim(), color: colored[2] };
+  }
+
+  // Plain highlight: "highlight india".
+  const highlight = lower.match(/^highlight (?:the )?(.+)$/);
+  if (highlight?.[1]) {
+    return { kind: "highlight", text: highlight[1].trim(), color: "yellow" };
+  }
+
+  // Go to a slide by its text/title: "go to the introduction slide".
+  const byText = lower.match(/^go to (?:the )?(.+?) slide$/);
+  if (byText?.[1]) {
+    return { kind: "slideByText", text: byText[1].trim() };
+  }
+
+  // Anything else is normal presentation speech — ignore it.
+  return null;
 }
 
 export function useVoiceControl({
@@ -124,86 +230,30 @@ export function useVoiceControl({
 
   const processCommand = useCallback((raw: string): boolean | "slide_not_found" => {
     const cb = callbacksRef.current;
-    const lower = canonicalise(normalise(raw));
-    if (!lower) return false;
-
-    // Bare number → jump to that slide (highest priority).
-    const bare = lower.match(new RegExp(`^(?:slide )?(\\d{1,3}|${NUM_WORDS})$`));
-    if (bare?.[1]) {
-      const n = toNumber(bare[1]);
-      if (n != null) {
-        return cb.onGoToSlide(n - 1) === false ? "slide_not_found" : true;
-      }
+    const cmd = resolveCommand(raw);
+    if (!cmd) return false;
+    switch (cmd.kind) {
+      case "next":
+        cb.onNext();
+        return true;
+      case "prev":
+        cb.onPrev();
+        return true;
+      case "slide":
+        return cb.onGoToSlide(cmd.n - 1) === false ? "slide_not_found" : true;
+      case "highlight":
+        cb.onHighlight(cmd.text, cmd.color);
+        return true;
+      case "removeHighlight":
+        cb.onRemoveHighlight(cmd.text);
+        return true;
+      case "clearHighlights":
+        cb.onClearHighlights();
+        return true;
+      case "slideByText":
+        cb.onGoToSlideByText(cmd.text);
+        return true;
     }
-
-    // "go to slide 8" / "slide eight" / "jump to slide 8"
-    const numbered = lower.match(
-      new RegExp(`(?:go|jump|move|open|show)?\\s*(?:to\\s*)?slide\\s*(?:number\\s*)?(\\d{1,3}|${NUM_WORDS})`),
-    );
-    if (numbered?.[1]) {
-      const n = toNumber(numbered[1]);
-      if (n != null) {
-        return cb.onGoToSlide(n - 1) === false ? "slide_not_found" : true;
-      }
-    }
-
-    // Clear all highlights.
-    if (/\bclear\b.*\bhighlight\b/.test(lower) || /\bremove all highlight\b/.test(lower)) {
-      cb.onClearHighlights();
-      return true;
-    }
-
-    // Remove a specific highlight.
-    const remove = lower.match(/remove (?:the )?highlight (?:from |on |of )?(.+)/);
-    if (remove?.[1]) {
-      cb.onRemoveHighlight(remove[1].trim());
-      return true;
-    }
-
-    // Highlight with a colour.
-    const colored = lower.match(
-      new RegExp(`highlight (?:the )?(.+?) (?:in|with|using) (${COLORS.join("|")})`),
-    );
-    if (colored?.[1] && colored[2]) {
-      cb.onHighlight(colored[1].trim(), colored[2]);
-      return true;
-    }
-
-    // Plain highlight.
-    const highlight = lower.match(/highlight (?:the )?(.+)/);
-    if (highlight?.[1]) {
-      cb.onHighlight(highlight[1].trim(), "yellow");
-      return true;
-    }
-
-    // Navigation.
-    if (/\bnext\b/.test(lower) && /\bslide|page\b/.test(lower)) {
-      cb.onNext();
-      return true;
-    }
-    if (/^next$/.test(lower) || /\bnext slide\b/.test(lower)) {
-      cb.onNext();
-      return true;
-    }
-    if (
-      /\bprevious\b/.test(lower) ||
-      /\bgo back\b/.test(lower) ||
-      /\bback slide\b/.test(lower) ||
-      /^back$/.test(lower)
-    ) {
-      cb.onPrev();
-      return true;
-    }
-
-    // Go to a slide by its text/title.
-    const byText = lower.match(/go to (?:the )?(.+?) slide/);
-    if (byText?.[1]) {
-      cb.onGoToSlideByText(byText[1].trim());
-      return true;
-    }
-
-    // Anything else is normal presentation speech — ignore it.
-    return false;
   }, []);
 
   useEffect(() => {
@@ -229,6 +279,26 @@ export function useVoiceControl({
     let restartTimer: number | null = null;
     let watchdog: number | null = null;
     let lastActivity = Date.now();
+    let disposed = false;
+
+    // Ask for the microphone up-front so a denial surfaces immediately as
+    // "Permission denied" instead of a silent recognition failure later.
+    // The track is stopped right away — the CameraWindow keeps its own stream.
+    let permissionCheck: Promise<void> | null = null;
+    if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
+      permissionCheck = navigator.mediaDevices
+        .getUserMedia({ audio: true })
+        .then((stream) => {
+          for (const track of stream.getTracks()) track.stop();
+        })
+        .catch(() => {
+          if (!disposed) {
+            setStatus("permission_denied");
+            setIsListening(false);
+            stoppingRef.current = true;
+          }
+        });
+    }
 
     const recognition = new Ctor();
     recognition.continuous = true;
@@ -267,54 +337,67 @@ export function useVoiceControl({
     recognition.onresult = (event: any) => {
       lastActivity = Date.now();
       let interim = "";
-      let final = "";
-      let confidence = 1;
-      const alternatives: string[] = [];
+      const finals: Array<{ text: string; confidence: number; alternatives: string[] }> = [];
 
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
         if (!result) continue;
         if (result.isFinal) {
-          final += result[0]?.transcript ?? "";
-          if (typeof result[0]?.confidence === "number" && result[0].confidence > 0) {
-            confidence = Math.min(confidence, result[0].confidence);
-          }
+          const alt: string[] = [];
           for (let a = 1; a < result.length; a++) {
-            const alt = result[a]?.transcript;
-            if (alt) alternatives.push(alt);
+            const t = result[a]?.transcript;
+            if (t) alt.push(t);
           }
+          finals.push({
+            text: result[0]?.transcript ?? "",
+            confidence:
+              typeof result[0]?.confidence === "number" && result[0].confidence > 0
+                ? result[0].confidence
+                : 1,
+            alternatives: alt,
+          });
         } else {
           interim += result[0]?.transcript ?? "";
         }
       }
 
-      const speech = final || interim;
+      const speech = finals.map((f) => f.text).join(" ") || interim;
       if (speech) {
         setTranscript(speech.trim());
-        if (!final) setStatus("recognizing");
+        if (!finals.length) setStatus("recognizing");
       }
 
-      if (!final.trim()) return;
+      if (!finals.length) return;
 
-      // Low-confidence results are still worth trying against strict command
-      // patterns, but never surface an error for them.
-      const confident = confidence >= thresholdRef.current;
+      for (const { text, confidence, alternatives } of finals) {
+        if (!text.trim()) continue;
 
-      let outcome = processCommand(final);
-      if (outcome === false) {
-        for (const alt of alternatives) {
-          const r = processCommand(alt);
-          if (r !== false) {
-            outcome = r;
-            break;
+        let outcome = processCommand(text);
+
+        // Strict gate: exact commands (next / previous / bare numbers) only
+        // run when the engine is confident. Weak-hearing misfires are worse
+        // than a missed command during a talk.
+        if (outcome !== false && confidence < thresholdRef.current) {
+          outcome = false;
+        }
+
+        // Only if the primary transcript resolved nothing do we try the
+        // engine's alternatives — and they face the same confidence gate.
+        if (outcome === false) {
+          for (const alt of alternatives) {
+            const r = processCommand(alt);
+            if (r !== false && confidence >= thresholdRef.current) {
+              outcome = r;
+              break;
+            }
           }
         }
-      }
 
-      if (outcome === "slide_not_found") flashStatus("slide_not_found");
-      else if (outcome) flashStatus("executed");
-      else if (confident) flashStatus("not_recognized");
-      else setStatus("listening");
+        if (outcome === "slide_not_found") flashStatus("slide_not_found");
+        else if (outcome) flashStatus("executed");
+        else if (confidence >= thresholdRef.current) flashStatus("not_recognized");
+        else setStatus("listening");
+      }
     };
 
     recognition.onerror = (event: any) => {
@@ -341,7 +424,9 @@ export function useVoiceControl({
       restartTimer = window.setTimeout(safeStart, 350);
     };
 
-    safeStart();
+    void permissionCheck?.then(() => {
+      if (!disposed && enabledRef.current && !stoppingRef.current) safeStart();
+    });
 
     // Watchdog: some browsers silently stop delivering audio events.
     watchdog = window.setInterval(() => {
@@ -357,6 +442,7 @@ export function useVoiceControl({
     }, 5000);
 
     return () => {
+      disposed = true;
       stoppingRef.current = true;
       if (restartTimer) window.clearTimeout(restartTimer);
       if (watchdog) window.clearInterval(watchdog);

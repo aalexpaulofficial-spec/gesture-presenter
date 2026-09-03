@@ -15,6 +15,7 @@ from typing import Any
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from .analysis import analyse_presentation
@@ -101,6 +102,7 @@ def get_deck(deck_id: str) -> Any:
     }
 
 
-@app.delete("/decks/{deck_id}", status_code=204)
-def delete_deck(deck_id: str) -> None:
+@app.delete("/decks/{deck_id}", status_code=204, response_class=Response)
+def delete_deck(deck_id: str) -> Response:
     store.delete(deck_id)
+    return Response(status_code=204)
