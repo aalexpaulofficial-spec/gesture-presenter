@@ -1,14 +1,15 @@
-const CACHE_NAME = "gesture-presenter-v1";
+const CACHE_NAME = "master-presenter-v2";
 
-// All the core assets to cache for offline use
+// Core application shell assets to cache for offline usage
 const PRECACHE_URLS = [
   "/",
   "/present",
   "/manifest.json",
   "/GESTURE PRESENTER LOGO DESIGN.png",
+  "/favicon.ico",
 ];
 
-// Install: cache all core assets
+// Install: cache application shell
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
@@ -18,7 +19,7 @@ self.addEventListener("install", (event) => {
   );
 });
 
-// Activate: remove old caches
+// Activate: clean up outdated caches
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
@@ -34,16 +35,16 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-// Fetch: network-first with cache fallback
+// Fetch: Network-first for dynamic content with robust cache fallback for offline execution
 self.addEventListener("fetch", (event) => {
-  // Skip non-GET and chrome-extension requests
+  // Only handle GET requests from http/https
   if (event.request.method !== "GET") return;
   if (!event.request.url.startsWith("http")) return;
 
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        // Cache a copy of every successful response
+        // Cache successful responses for offline support
         if (response && response.status === 200) {
           const cloned = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, cloned));
@@ -51,14 +52,18 @@ self.addEventListener("fetch", (event) => {
         return response;
       })
       .catch(() => {
-        // Offline: serve from cache
+        // When offline, match request from cache
         return caches.match(event.request).then((cached) => {
           if (cached) return cached;
-          // For navigate requests, serve the root page
+          // For navigation requests, fallback to the cached shell
           if (event.request.mode === "navigate") {
+            const url = new URL(event.request.url);
+            if (url.pathname.startsWith("/present")) {
+              return caches.match("/present").then((presentPage) => presentPage || caches.match("/"));
+            }
             return caches.match("/");
           }
-          return new Response("Offline", { status: 503 });
+          return new Response("Offline", { status: 503, statusText: "Offline" });
         });
       })
   );

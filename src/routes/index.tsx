@@ -30,18 +30,25 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import heroProduct from "@/assets/hero-product.jpg";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "PPT Hand Control — Present with your hands" },
+      { title: "Master Presenter — Present with your hands" },
       {
         name: "description",
         content:
           "Control any presentation with simple hand gestures. Front palm for next, back palm for previous, index finger for a smooth laser pointer. Works in your browser on laptop, tablet and phone.",
       },
-      { property: "og:title", content: "PPT Hand Control — Present with your hands" },
+      { property: "og:title", content: "Master Presenter — Present with your hands" },
       {
         property: "og:description",
         content:
@@ -64,13 +71,16 @@ const nav = [
 
 function Landing() {
   const [menuOpen, setMenuOpen] = useState(false);
-  const { state, triggerInstall } = usePWAInstall();
+  const { isInstalled, platform, triggerInstall } = usePWAInstall();
+  const [alreadyInstalledOpen, setAlreadyInstalledOpen] = useState(false);
+  const [instructionModalOpen, setInstructionModalOpen] = useState(false);
 
-  function handleDownload() {
-    if (state === "available") {
-      triggerInstall();
-    } else {
-      alert("Your browser does not support the automatic install prompt, or the app is already installed.\n\nTo install manually:\n- On Chrome/Edge (Desktop): Click the install icon (a screen with a down arrow) in the right side of your address bar.\n- On Phone/Tablet: Tap the browser menu or share button and select 'Add to Home screen'.");
+  async function handleDownload() {
+    const result = await triggerInstall();
+    if (result === "already_installed") {
+      setAlreadyInstalledOpen(true);
+    } else if (result === "show_instructions") {
+      setInstructionModalOpen(true);
     }
   }
 
@@ -84,7 +94,7 @@ function Landing() {
             <span className="grid h-9 w-9 place-items-center rounded-xl bg-primary text-primary-foreground shadow-soft">
               <Hand className="h-4.5 w-4.5" />
             </span>
-            <span className="font-display text-[15px] font-semibold tracking-tight">PPT Hand Control</span>
+            <span className="font-display text-[15px] font-semibold tracking-tight">Master Presenter</span>
           </a>
 
           <nav className="hidden items-center gap-8 md:flex">
@@ -112,7 +122,7 @@ function Landing() {
               </Button>
             )}
             <Button asChild size="sm" className="rounded-full px-4">
-              <Link to="/present">
+              <Link to="/present" search={{ plan: "Master Hand" }}>
                 Start presenting <ArrowRight className="ml-1 h-3.5 w-3.5" />
               </Link>
             </Button>
@@ -157,11 +167,81 @@ function Landing() {
       <footer className="border-t border-border py-10">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-5 text-sm text-muted-foreground sm:flex-row lg:px-8">
           <span className="flex items-center gap-2 font-display font-semibold text-foreground">
-            <Hand className="h-4 w-4 text-primary" /> PPT Hand Control
+            <Hand className="h-4 w-4 text-primary" /> Master Presenter
           </span>
           <span>Present with your hands. © {new Date().getFullYear()}</span>
         </div>
       </footer>
+
+      {/* Already Installed Dialog */}
+      <Dialog open={alreadyInstalledOpen} onOpenChange={setAlreadyInstalledOpen}>
+        <DialogContent className="max-w-sm text-center">
+          <DialogHeader>
+            <DialogTitle className="font-display text-lg">Already installed</DialogTitle>
+            <DialogDescription className="text-sm mt-2 text-muted-foreground">
+              Master Presenter is already installed on this device.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-4 flex justify-center">
+            <Button onClick={() => setAlreadyInstalledOpen(false)} className="rounded-full px-6">
+              OK
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Device-Specific PWA Installation Instructions */}
+      <Dialog open={instructionModalOpen} onOpenChange={setInstructionModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display text-lg">Install Master Presenter</DialogTitle>
+            <DialogDescription className="text-sm mt-1 text-muted-foreground">
+              Install as a lightweight app to use full presentation controls offline.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-4 space-y-3 text-sm text-muted-foreground">
+            {platform === "ios" ? (
+              <div className="rounded-xl border border-border bg-card p-4 space-y-2">
+                <p className="font-semibold text-foreground">On iPhone & iPad (Safari):</p>
+                <ol className="list-decimal list-inside space-y-1.5 text-xs leading-relaxed">
+                  <li>Tap the <strong>Share</strong> button (box with an arrow ⎋) in Safari’s toolbar.</li>
+                  <li>Scroll down and tap <strong>Add to Home Screen</strong> (+).</li>
+                  <li>Tap <strong>Add</strong> in the top right corner.</li>
+                </ol>
+              </div>
+            ) : platform === "android" ? (
+              <div className="rounded-xl border border-border bg-card p-4 space-y-2">
+                <p className="font-semibold text-foreground">On Android (Chrome / Edge / Firefox):</p>
+                <ol className="list-decimal list-inside space-y-1.5 text-xs leading-relaxed">
+                  <li>Tap the menu icon (<strong>⋮</strong>) in the top-right corner.</li>
+                  <li>Select <strong>Install app</strong> or <strong>Add to Home screen</strong>.</li>
+                </ol>
+              </div>
+            ) : platform === "mac_safari" ? (
+              <div className="rounded-xl border border-border bg-card p-4 space-y-2">
+                <p className="font-semibold text-foreground">On Mac (Safari):</p>
+                <ol className="list-decimal list-inside space-y-1.5 text-xs leading-relaxed">
+                  <li>In the top menu bar, click <strong>File</strong>.</li>
+                  <li>Select <strong>Add to Dock...</strong>, then click <strong>Add</strong>.</li>
+                </ol>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-border bg-card p-4 space-y-2">
+                <p className="font-semibold text-foreground">On Desktop (Chrome / Edge / Windows / Mac):</p>
+                <ol className="list-decimal list-inside space-y-1.5 text-xs leading-relaxed">
+                  <li>Click the <strong>Install</strong> icon in the address bar (on the right).</li>
+                  <li>Or click the browser menu (<strong>⋮</strong>) → <strong>Save and share</strong> → <strong>Install Master Presenter</strong>.</li>
+                </ol>
+              </div>
+            )}
+          </div>
+          <div className="mt-4 flex justify-end">
+            <Button variant="outline" onClick={() => setInstructionModalOpen(false)} className="rounded-full px-6">
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -189,7 +269,7 @@ function Hero({
           </p>
           <div className="animate-rise mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Button asChild size="lg" className="w-full rounded-full px-7 sm:w-auto">
-              <Link to="/present">
+              <Link to="/present" search={{ plan: "Master Hand" }}>
                 Upload a presentation <ArrowRight className="ml-1.5 h-4 w-4" />
               </Link>
             </Button>
@@ -218,7 +298,7 @@ function Hero({
           <div className="overflow-hidden rounded-3xl border border-border bg-card shadow-lift">
             <img
               src={heroProduct}
-              alt="Presentation open in PPT Hand Control with a floating camera window and a laser pointer on the slide"
+              alt="Presentation open in Master Presenter with a floating camera window and a laser pointer on the slide"
               width={1600}
               height={1104}
               className="w-full"
@@ -400,7 +480,7 @@ function WhyUs() {
       <div className="mx-auto grid max-w-6xl items-center gap-12 px-5 lg:grid-cols-2 lg:px-8">
         <div>
           <span className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-            Why PPT Hand Control
+            Why Master Presenter
           </span>
           <h2 className="mt-3 font-display text-3xl font-semibold tracking-tight text-ink sm:text-4xl">
             Stay with your audience, not with your laptop
@@ -420,7 +500,7 @@ function WhyUs() {
             ))}
           </ul>
           <Button asChild className="mt-9 rounded-full px-6">
-            <Link to="/present">
+            <Link to="/present" search={{ plan: "Master Hand" }}>
               Try it with your own deck <ArrowRight className="ml-1.5 h-4 w-4" />
             </Link>
           </Button>
@@ -514,22 +594,22 @@ function GestureGuide() {
 function Pricing() {
   const tiers = [
     {
-      name: "Free",
+      name: "Master Hand",
       price: "$0",
-      note: "forever",
-      copy: "Everything you need to present hands-free.",
+      note: "",
+      freeLabel: "Free",
+      copy: "Hands-only presentation control.",
       cta: "Start presenting",
       link: "/present" as const,
-      search: {} as Record<string, unknown>,
+      search: { plan: "Master Hand" } as Record<string, unknown>,
       badge: null,
       highlight: false,
       features: [
-        "Unlimited basic presentations",
-        "Front palm → Next slide",
-        "Close hand → reopen front palm → Next slide again",
-        "Back of hand → Previous slide",
-        "Close hand → reopen back of hand → Previous slide again",
-        "Index finger → Laser pointer",
+        "Hand gesture slide navigation",
+        "Front palm → Next Slide",
+        "Back of hand → Previous Slide",
+        "Close hand → reset",
+        "Index finger → Laser Pointer",
         "Full-slide laser movement",
         "Camera hand control",
         "Exact PPT/PPTX presentation",
@@ -538,64 +618,91 @@ function Pricing() {
       ],
     },
     {
-      name: "Pro",
-      price: "$9",
-      note: "per month",
-      copy: "For presenters who want hands + voice.",
-      cta: "Upgrade to Pro",
+      name: "Master Voice",
+      price: "$0",
+      note: "",
+      freeLabel: "Free",
+      copy: "Hands + Voice presentation control.",
+      cta: "Upgrade to Master Voice",
       link: "/present" as const,
-      search: { pro: true } as Record<string, unknown>,
+      search: { plan: "Master Voice", pro: true } as Record<string, unknown>,
       badge: "MOST POPULAR",
       highlight: true,
       hasVoiceHighlight: true,
+      trialNote: "Unlimited",
       features: [
+        "Everything in Master Hand",
         "Voice slide navigation",
         "Voice → specific slide",
+        "“Next”",
+        "“Previous”",
+        "Number / number words → specific slide",
+        "“Go to Slide 8”",
         "Advanced laser controls",
         "Gesture sensitivity controls",
         "Presentation session history",
         "Advanced presenter controls",
-        "Custom branding",
-        "Presentation analytics",
-        "Priority processing",
       ],
     },
     {
-      name: "Ultra Pro",
-      price: "$19",
-      note: "per month",
-      copy: "AI-powered presentation intelligence.",
-      cta: "Upgrade to Ultra Pro",
+      name: "Master Write",
+      price: "$0",
+      note: "",
+      freeLabel: "Free",
+      copy: "Hands + Voice + Writing presentation control.",
+      cta: "Upgrade to Master Write",
       link: "/present" as const,
-      search: { pro: true } as Record<string, unknown>,
-      badge: "POWERED BY VEYRA AI",
+      search: { plan: "Master Write", pro: true } as Record<string, unknown>,
+      badge: "POWERED BY LIGHTNING AI",
       highlight: false,
+      trialNote: "Unlimited",
       features: [
-        "Everything in Pro",
-        "Veyra AI Presentation Copilot",
-        "AI understands the uploaded presentation",
-        "Ask questions about the current slide",
+        "Everything in Master Voice",
+        "Hand-controlled writing",
+        "Real-time presentation drawing",
+        "Multiple writing strokes",
+        "Clear / erase writing",
+        "Smooth low-latency drawing",
+        "Accurate slide coordinate mapping",
+        "Highlight presentation content",
+        "Remove Highlights",
+        "Clear Highlights",
+        "Original PPT/PPTX remains unchanged",
+      ],
+    },
+    {
+      name: "Master AI",
+      price: "$0",
+      note: "",
+      freeLabel: "Free",
+      copy: "Hands + Voice + Writing + AI presentation control.",
+      cta: "Upgrade to Master AI",
+      link: "/present" as const,
+      search: { plan: "Master AI", pro: true } as Record<string, unknown>,
+      badge: null,
+      highlight: false,
+      trialNote: "Unlimited",
+      features: [
+        "Everything in Master Write",
+        "AI presentation assistance",
+        "Presentation Q&A",
+        "Slide understanding",
         "Semantic slide search",
-        "“Go to the budget slide”",
-        "“Highlight the important number”",
-        "Private presenter assistance",
-        "“What should I explain here?”",
-        "“What comes next?”",
         "AI slide summaries",
         "AI presenter notes",
-        "AI presentation coaching",
-        "Speaking/time analysis",
-        "Post-presentation AI insights",
+        "Speaker assistance",
+        "Presentation coaching",
+        "Future AI-ready capabilities",
       ],
     },
     {
       name: "Business",
       price: "Custom",
       note: "per team",
-      copy: "For teams and organisations presenting at scale.",
-      cta: "Talk to us",
+      copy: "Complete presentation control for teams and organisations.",
+      cta: "Contact Sales",
       link: "/present" as const,
-      search: {} as Record<string, unknown>,
+      search: { plan: "Business" } as Record<string, unknown>,
       badge: null,
       highlight: false,
       features: [
@@ -620,7 +727,7 @@ function Pricing() {
           title="Hand control is free. Always."
           copy="Upgrade only when you want deeper customisation, history, branding or team management."
         />
-        <div className="mt-14 grid items-start gap-5 md:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-14 grid items-start gap-5 md:grid-cols-2 xl:grid-cols-5">
           {tiers.map((t) => (
             <div
               key={t.name}
@@ -629,15 +736,21 @@ function Pricing() {
               <div className="flex items-center justify-between">
                 <h3 className="font-display text-lg font-semibold">{t.name}</h3>
                 {t.badge && (
-                  <span className={`rounded-full px-3 py-1 text-[10px] sm:text-[11px] font-medium tracking-wide ${t.name === 'Ultra Pro' ? 'bg-indigo-500/10 text-indigo-500 border border-indigo-500/20' : 'bg-primary text-primary-foreground'}`}>
+                  <span className={`rounded-full px-3 py-1 text-[10px] sm:text-[11px] font-medium tracking-wide ${t.name === 'Master Write' ? 'bg-indigo-500/10 text-indigo-500 border border-indigo-500/20' : 'bg-primary text-primary-foreground'}`}>
                     {t.badge}
                   </span>
                 )}
               </div>
-              <p className="mt-4 flex items-end gap-1.5">
+              <p className="mt-4 flex items-end gap-1.5 flex-wrap">
                 <span className="font-display text-4xl font-semibold tracking-tight">{t.price}</span>
-                <span className="pb-1 text-xs text-muted-foreground">{t.note}</span>
+                {(t as any).freeLabel && (
+                  <span className="pb-1 text-sm font-semibold text-primary">{(t as any).freeLabel}</span>
+                )}
+                {t.note && <span className="pb-1 text-xs text-muted-foreground">{t.note}</span>}
               </p>
+              {(t as any).trialNote && (
+                <p className="mt-1 text-xs font-semibold text-primary">{(t as any).trialNote}</p>
+              )}
               <p className="mt-2 text-sm text-muted-foreground">{t.copy}</p>
 
               {t.hasVoiceHighlight && (
@@ -740,7 +853,7 @@ function FinalCta() {
         </p>
         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <Button asChild size="lg" className="w-full rounded-full px-7 sm:w-auto">
-            <Link to="/present">
+            <Link to="/present" search={{ plan: "Master Hand" }}>
               Start free <ArrowRight className="ml-1.5 h-4 w-4" />
             </Link>
           </Button>

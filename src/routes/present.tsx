@@ -28,13 +28,13 @@ import { Mic, MicOff, Sparkles } from "lucide-react";
 export const Route = createFileRoute("/present")({
   head: () => ({
     meta: [
-      { title: "Present with your hands — PPT Hand Control" },
+      { title: "Present with your hands — Master Presenter" },
       {
         name: "description",
         content:
           "Upload your presentation and control slides with simple hand gestures. Front palm for next, back palm for previous, index finger for a laser pointer.",
       },
-      { property: "og:title", content: "Present with your hands — PPT Hand Control" },
+      { property: "og:title", content: "Present with your hands — Master Presenter" },
       {
         property: "og:description",
         content: "Upload a presentation and control it with hand gestures, straight from your browser.",
@@ -44,9 +44,10 @@ export const Route = createFileRoute("/present")({
       { name: "robots", content: "noindex" },
     ],
   }),
-  validateSearch: (search: Record<string, unknown>): { pro?: boolean } => {
+  validateSearch: (search: Record<string, unknown>): { pro?: boolean; plan?: string } => {
     return {
       pro: search['pro'] === true || search['pro'] === 'true',
+      plan: typeof search['plan'] === 'string' ? search['plan'] : undefined,
     }
   },
   component: PresentPage,
@@ -60,6 +61,36 @@ const phaseCopy: Record<Exclude<Phase, "upload" | "ready" | "failed">, string> =
   preview: "Generating preview",
 };
 
+function formatPlanBadge(plan?: string | null): string {
+  if (!plan) return "MASTER HAND";
+  const p = plan.trim().toLowerCase();
+  if (p.includes("voice")) return "MASTER VOICE";
+  if (p.includes("write")) return "MASTER WRITE";
+  if (p.includes("ai")) return "MASTER AI";
+  if (p.includes("business")) return "BUSINESS";
+  if (p.includes("hand") || p === "free") return "MASTER HAND";
+  if (p === "pro") return "MASTER VOICE";
+  return plan.toUpperCase();
+}
+
+function getStoredPlan(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return localStorage.getItem("master_presenter_selected_plan");
+  } catch {
+    return null;
+  }
+}
+
+function setStoredPlan(plan: string) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem("master_presenter_selected_plan", plan);
+  } catch {
+    // ignore
+  }
+}
+
 function PresentPage() {
   const [phase, setPhase] = useState<Phase>("upload");
   const [progress, setProgress] = useState(0);
@@ -71,7 +102,37 @@ function PresentPage() {
   const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const search = Route.useSearch();
-  const [isPro, setIsPro] = useState(search.pro || false);
+  const [planName, setPlanName] = useState<string>(() => {
+    if (search.plan) return formatPlanBadge(search.plan);
+    const stored = getStoredPlan();
+    if (stored) return formatPlanBadge(stored);
+    if (search.pro) return "MASTER VOICE";
+    return "MASTER HAND";
+  });
+  const [isPro, setIsPro] = useState<boolean>(() => {
+    const initial = search.plan
+      ? formatPlanBadge(search.plan)
+      : getStoredPlan()
+      ? formatPlanBadge(getStoredPlan())
+      : search.pro
+      ? "MASTER VOICE"
+      : "MASTER HAND";
+    return initial !== "MASTER HAND";
+  });
+
+  useEffect(() => {
+    if (search.plan) {
+      const formatted = formatPlanBadge(search.plan);
+      setPlanName(formatted);
+      setIsPro(formatted !== "MASTER HAND");
+      setStoredPlan(formatted);
+    } else if (search.pro && !getStoredPlan()) {
+      setPlanName("MASTER VOICE");
+      setIsPro(true);
+      setStoredPlan("MASTER VOICE");
+    }
+  }, [search.plan, search.pro]);
+
   const [metadata, setMetadata] = useState<any[] | null>(null);
   const [highlights, setHighlights] = useState<VoiceHighlight[]>([]);
   const [laserEnabled, setLaserEnabled] = useState(true);
@@ -268,23 +329,23 @@ function PresentPage() {
               <span className="grid h-8 w-8 place-items-center rounded-xl bg-primary text-primary-foreground">
                 <Hand className="h-4 w-4" />
               </span>
-              PPT Hand Control
+              Master Presenter
             </Link>
-            {isPro ? (
-              <span className="ml-2 inline-flex items-center rounded-full bg-primary/20 px-2.5 py-0.5 text-xs font-semibold text-primary">
-                PRO
-              </span>
-            ) : (
-              <span className="ml-2 inline-flex items-center rounded-full bg-secondary px-2.5 py-0.5 text-xs font-semibold text-muted-foreground border border-border">
-                FREE
-              </span>
-            )}
+            <span className={`ml-2 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+              isPro
+                ? 'bg-primary/20 text-primary'
+                : 'bg-secondary text-muted-foreground border border-border'
+            }`}>
+              {planName.toUpperCase()}
+            </span>
           </div>
           <div className="flex items-center gap-4">
             <span className="max-w-[30vw] truncate text-xs text-muted-foreground">{fileName}</span>
             {!isPro && phase === "upload" && (
-              <Button size="sm" variant="outline" onClick={() => setIsPro(true)}>
-                <Sparkles className="mr-1.5 h-3.5 w-3.5" /> Upgrade to Pro
+              <Button asChild size="sm" variant="outline">
+                <Link to="/" hash="pricing">
+                  <Sparkles className="mr-1.5 h-3.5 w-3.5" /> Get Free Premium Master Plans — Unlimited
+                </Link>
               </Button>
             )}
           </div>

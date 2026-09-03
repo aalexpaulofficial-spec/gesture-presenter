@@ -77,7 +77,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "PPT Hand Control — Present with your hands" },
+      { title: "Master Presenter — Present with your hands" },
       {
         name: "description",
         content: "Control any presentation with simple hand gestures, right in your browser.",
@@ -87,7 +87,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-status-bar-style", content: "default" },
-      { name: "apple-mobile-web-app-title", content: "Gesture Presenter" },
+      { name: "apple-mobile-web-app-title", content: "Master Presenter" },
       { name: "theme-color", content: "#ffffff" },
     ],
     links: [
@@ -117,6 +117,25 @@ function RootShell({ children }: { children: ReactNode }) {
     <html lang="en">
       <head>
         <HeadContent />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              window.__deferredPWAInstallPrompt = null;
+              window.addEventListener('beforeinstallprompt', function(e) {
+                e.preventDefault();
+                window.__deferredPWAInstallPrompt = e;
+                if (typeof window.__onPWAInstallAvailable === 'function') {
+                  window.__onPWAInstallAvailable(e);
+                }
+              });
+              if ('serviceWorker' in navigator) {
+                window.addEventListener('load', function() {
+                  navigator.serviceWorker.register('/sw.js').catch(function(){});
+                });
+              }
+            `,
+          }}
+        />
       </head>
       <body>
         {children}
