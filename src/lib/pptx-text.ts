@@ -24,7 +24,7 @@ function num(v: string | null | undefined): number {
 
 function slideNumber(path: string): number {
   const m = path.match(/slide(\d+)\.xml$/);
-  return m ? parseInt(m[1], 10) : 0;
+  return m?.[1] ? parseInt(m[1], 10) : 0;
 }
 
 export async function extractSlideText(buffer: ArrayBuffer): Promise<SlideText[]> {
@@ -53,7 +53,8 @@ export async function extractSlideText(buffer: ArrayBuffer): Promise<SlideText[]
   const slides: SlideText[] = [];
 
   for (let i = 0; i < paths.length; i++) {
-    const xml = await zip.file(paths[i])!.async("string");
+    const path = paths[i]!;
+    const xml = await zip.file(path)!.async("string");
     const doc = parser.parseFromString(xml, "application/xml");
     const shapes = Array.from(doc.getElementsByTagName("p:sp"));
     const elements: SlideTextElement[] = [];

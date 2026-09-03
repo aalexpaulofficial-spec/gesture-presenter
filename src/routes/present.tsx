@@ -46,7 +46,7 @@ export const Route = createFileRoute("/present")({
   }),
   validateSearch: (search: Record<string, unknown>): { pro?: boolean } => {
     return {
-      pro: search.pro === true || search.pro === 'true',
+      pro: search['pro'] === true || search['pro'] === 'true',
     }
   },
   component: PresentPage,
