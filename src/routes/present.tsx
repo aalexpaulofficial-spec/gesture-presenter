@@ -46,7 +46,7 @@ export const Route = createFileRoute("/present")({
   }),
   validateSearch: (search: Record<string, unknown>): { pro?: boolean } => {
     return {
-      pro: search.pro === true || search.pro === 'true',
+      pro: search['pro'] === true || search['pro'] === 'true',
     }
   },
   component: PresentPage,
@@ -116,31 +116,12 @@ function PresentPage() {
     setProgress(45);
     setPhase("analyzing");
     
-    if (isPro) {
-      try {
-        const formData = new FormData();
-        formData.append("file", file);
-        const res = await fetch("http://localhost:8000/decks", {
-          method: "POST",
-          body: formData,
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setMetadata(data.slides);
-        } else {
-          console.error("Backend analysis failed", await res.text());
-        }
-      } catch (err) {
-        console.error("Backend error", err);
-      }
-    } else {
-      await new Promise((r) => setTimeout(r, 320));
-    }
-    
+    await new Promise((r) => setTimeout(r, 220));
+
     setProgress(72);
     setPhase("preview");
     setBuffer(buf);
-  }, [isPro]);
+  }, []);
 
   const onReady = useCallback(({ slideCount: count }: { slideCount: number }) => {
     setSlideCount(count);
@@ -170,29 +151,47 @@ function PresentPage() {
     return () => document.removeEventListener("fullscreenchange", onChange);
   }, []);
 
-  // If user upgrades to Pro after uploading a file, fetch metadata retroactively.
+  // Pro: read the uploaded deck's text boxes in the browser so voice
+  // highlighting targets the real slide content. The file is never modified.
   useEffect(() => {
-    if (!isPro || metadata !== null || !fileRef.current) return;
-    const file = fileRef.current;
-    const formData = new FormData();
-    formData.append("file", file);
-    fetch("http://localhost:8000/decks", { method: "POST", body: formData })
-      .then((res) => res.ok ? res.json() : null)
-      .then((data) => { if (data?.slides) setMetadata(data.slides); })
-      .catch(() => {});
-  }, [isPro, metadata]);
+    if (!isPro || !buffer || metadata !== null) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { extractSlideText } = await import("@/lib/pptx-text");
+        const slides = await extractSlideText(buffer);
+        if (!cancelled) setMetadata(slides);
+      } catch {
+        if (!cancelled) setMetadata([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isPro, buffer, metadata]);
 
   const handleHighlight = useCallback((text: string, color: string) => {
-    if (!metadata || !metadata[index]) return;
-    const elements = metadata[index].text_elements || [];
-    const match = elements.find((e: any) => e.text.toLowerCase().includes(text.toLowerCase()));
+    const slide = metadata?.[index];
+    if (!slide) return;
+    const elements: any[] = slide.text_elements || [];
+    const needle = text.toLowerCase().trim();
+    const match =
+      elements.find((e) => e.text.toLowerCase().includes(needle)) ??
+      elements.find((e) =>
+        needle
+          .split(" ")
+          .some((word) => word.length > 2 && e.text.toLowerCase().includes(word)),
+      );
     if (match) {
-      setHighlights(prev => [...prev, {
-        id: Math.random().toString(),
-        text: match.text,
-        color,
-        box: { left: match.left, top: match.top, width: match.width, height: match.height }
-      }]);
+      setHighlights((prev) => [
+        ...prev,
+        {
+          id: Math.random().toString(36).slice(2),
+          text: match.text,
+          color,
+          box: { left: match.left, top: match.top, width: match.width, height: match.height },
+        },
+      ]);
     }
   }, [metadata, index]);
 
@@ -448,44 +447,48 @@ function HowToControl({ isPro }: { isPro: boolean }) {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="mt-1">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            HAND + CAMERA
+        <div className="mt-1 rounded-2xl border border-border bg-card p-4">
+          <p className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <Hand className="h-4 w-4 text-primary" /> Hand + Camera
           </p>
           <ul className="space-y-3 text-sm">
-            <li className="flex gap-3">
-              <span><strong>Open Front Palm</strong> → Next Slide</span>
-            </li>
-            <li className="flex gap-3">
-              <span><strong>Close hand → reopen Front Palm</strong> → Next Slide again</span>
-            </li>
-            <li className="flex gap-3">
-              <span><strong>Back of Hand</strong> → Previous Slide</span>
-            </li>
-            <li className="flex gap-3">
-              <span><strong>Close hand → reopen Back of Hand</strong> → Previous Slide again</span>
-            </li>
-            <li className="flex gap-3">
-              <span><strong>Raised Index Finger</strong> → Laser Pointer</span>
-            </li>
+            {[
+              { icon: "🖐️", cmd: "Open Front Palm", desc: "Next Slide" },
+              { icon: "✊", cmd: "Close hand → reopen Front Palm", desc: "Next Slide again" },
+              { icon: "🖐️", cmd: "Back of Hand", desc: "Previous Slide" },
+              { icon: "✊", cmd: "Close hand → reopen Back of Hand", desc: "Previous Slide again" },
+              { icon: "☝️", cmd: "Raised Index Finger", desc: "Laser Pointer" },
+            ].map(({ icon, cmd, desc }) => (
+              <li key={cmd} className="flex items-start gap-3">
+                <span aria-hidden className="text-base leading-5">{icon}</span>
+                <span>
+                  <strong className="font-semibold">{cmd}</strong>
+                  <span className="text-muted-foreground"> → {desc}</span>
+                </span>
+              </li>
+            ))}
           </ul>
+          <p className="mt-3 rounded-lg bg-primary-soft/50 px-3 py-2 text-xs text-muted-foreground">
+            The laser pointer works only from your hand — a raised index finger. It is never
+            triggered by voice.
+          </p>
         </div>
 
         {isPro && (
-          <div className="mt-5 border-t border-border pt-4">
-            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              VOICE
+          <div className="mt-4 rounded-2xl border border-border bg-card p-4">
+            <p className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <Mic className="h-4 w-4 text-primary" /> Voice
             </p>
             <ul className="space-y-2.5 text-sm">
               {[
-                { cmd: "Next Slide",             desc: "Next slide" },
-                { cmd: "Previous Slide",         desc: "Previous slide" },
-                { cmd: "4",                      desc: "Jump to slide 4" },
+                { cmd: "Next Slide",             desc: "Go to the next slide" },
+                { cmd: "Previous Slide",         desc: "Go to the previous slide" },
+                { cmd: "4",                      desc: "Jump straight to slide 4" },
                 { cmd: "Go to Slide 8",          desc: "Jump to slide 8" },
-                { cmd: "Highlight India",        desc: "Highlight India" },
-                { cmd: "Highlight India in red", desc: "Red highlight" },
-                { cmd: "Remove Highlight India", desc: "Remove India highlight" },
-                { cmd: "Clear Highlights",       desc: "Remove all highlights" },
+                { cmd: "Highlight India",        desc: "Highlight “India” on this slide" },
+                { cmd: "Highlight India in red", desc: "Highlight it in red, yellow, green or blue" },
+                { cmd: "Remove Highlight India", desc: "Remove just that highlight" },
+                { cmd: "Clear Highlights",       desc: "Remove every highlight on this slide" },
               ].map(({ cmd, desc }) => (
                 <li key={cmd} className="flex items-start gap-3">
                   <span className="mt-0.5 shrink-0 rounded-md border border-border bg-secondary px-2 py-0.5 font-mono text-[11px] text-foreground whitespace-nowrap">
@@ -495,6 +498,11 @@ function HowToControl({ isPro }: { isPro: boolean }) {
                 </li>
               ))}
             </ul>
+            <p className="mt-3 rounded-lg bg-primary-soft/50 px-3 py-2 text-xs text-muted-foreground">
+              The microphone listens continuously alongside the camera. Normal presentation speech is
+              ignored — only these commands run. Watch the “Listening…” chip beside the controls to
+              see what was heard.
+            </p>
           </div>
         )}
       </DialogContent>

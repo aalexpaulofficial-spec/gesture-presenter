@@ -1,8 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 
-// @ts-ignore
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-
 export type VoiceHighlight = {
   id: string;
   text: string;
@@ -22,6 +19,8 @@ export type VoiceStatus =
 
 type UseVoiceControlProps = {
   enabled: boolean;
+  /** Minimum recognition confidence (0-1) required for a final result to run. */
+  confidenceThreshold?: number;
   onNext: () => void;
   onPrev: () => void;
   onGoToSlide: (slide: number) => boolean | void;
@@ -31,8 +30,50 @@ type UseVoiceControlProps = {
   onGoToSlideByText: (text: string) => void;
 };
 
+const WORDS_TO_NUM: Record<string, number> = {
+  one: 1, won: 1, two: 2, to: 2, too: 2, three: 3, tree: 3, four: 4, for: 4, fore: 4,
+  five: 5, six: 6, sex: 6, seven: 7, eight: 8, ate: 8, nine: 9, ten: 10, eleven: 11,
+  twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17,
+  eighteen: 18, nineteen: 19, twenty: 20,
+};
+
+const NUM_WORDS = Object.keys(WORDS_TO_NUM).join("|");
+
+function toNumber(raw: string): number | null {
+  const v = raw.trim().toLowerCase();
+  if (/^\d+$/.test(v)) return parseInt(v, 10);
+  if (v in WORDS_TO_NUM) return WORDS_TO_NUM[v]!;
+  return null;
+}
+
+const COLORS = ["yellow", "red", "green", "blue"];
+
+function normalise(input: string): string {
+  return input
+    .toLowerCase()
+    .replace(/[.,!?;:"'’“”]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Speech-tolerance: fold common mis-recognitions into canonical wording. */
+function canonicalise(text: string): string {
+  return text
+    .replace(/\b(nekst|nexts|neck's|nex|net)\b/g, "next")
+    .replace(/\b(prev|pre|previews|previously|prevous|preview)\b/g, "previous")
+    .replace(/\b(slides|slid|slyde|sled|slade)\b/g, "slide")
+    .replace(/\b(hilight|highlite|high light|highlights?)\b/g, "highlight")
+    .replace(/\b(clean|cleared|clears)\b/g, "clear")
+    .replace(/\bgo to the\b/g, "go to the")
+    .replace(/\bgoto\b/g, "go to")
+    .replace(/\bgo two\b/g, "go to")
+    .replace(/\bremoved\b/g, "remove")
+    .trim();
+}
+
 export function useVoiceControl({
   enabled,
+  confidenceThreshold = 0.4,
   onNext,
   onPrev,
   onGoToSlide,
@@ -41,13 +82,18 @@ export function useVoiceControl({
   onClearHighlights,
   onGoToSlideByText,
 }: UseVoiceControlProps) {
+  const [supported, setSupported] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [supported] = useState(!!SpeechRecognition);
   const [transcript, setTranscript] = useState("");
   const [status, setStatus] = useState<VoiceStatus>("idle");
+
   const recognitionRef = useRef<any>(null);
   const enabledRef = useRef(enabled);
   enabledRef.current = enabled;
+  const thresholdRef = useRef(confidenceThreshold);
+  thresholdRef.current = confidenceThreshold;
+  const stoppingRef = useRef(false);
+  const resetTimerRef = useRef<number | null>(null);
 
   const callbacksRef = useRef({
     onNext,
@@ -58,223 +104,272 @@ export function useVoiceControl({
     onClearHighlights,
     onGoToSlideByText,
   });
+  callbacksRef.current = {
+    onNext,
+    onPrev,
+    onGoToSlide,
+    onHighlight,
+    onRemoveHighlight,
+    onClearHighlights,
+    onGoToSlideByText,
+  };
 
   useEffect(() => {
-    callbacksRef.current = {
-      onNext,
-      onPrev,
-      onGoToSlide,
-      onHighlight,
-      onRemoveHighlight,
-      onClearHighlights,
-      onGoToSlideByText,
-    };
-  }, [onNext, onPrev, onGoToSlide, onHighlight, onRemoveHighlight, onClearHighlights, onGoToSlideByText]);
+    const Ctor =
+      typeof window !== "undefined"
+        ? (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+        : undefined;
+    setSupported(Boolean(Ctor));
+  }, []);
 
-  const processCommand = useCallback(
-    (command: string): boolean | string => {
-      const callbacks = callbacksRef.current;
-      // Normalize punctuation and extra spaces
-      const lower = command.toLowerCase().replace(/[.,!?;:]/g, "").replace(/\s+/g, " ").trim();
+  const processCommand = useCallback((raw: string): boolean | "slide_not_found" => {
+    const cb = callbacksRef.current;
+    const lower = canonicalise(normalise(raw));
+    if (!lower) return false;
 
-      // Navigation: "next slide"
-      if (lower.includes("next slide")) {
-        callbacks.onNext();
-        return true;
+    // Bare number → jump to that slide (highest priority).
+    const bare = lower.match(new RegExp(`^(?:slide )?(\\d{1,3}|${NUM_WORDS})$`));
+    if (bare?.[1]) {
+      const n = toNumber(bare[1]);
+      if (n != null) {
+        return cb.onGoToSlide(n - 1) === false ? "slide_not_found" : true;
       }
+    }
 
-      // Navigation: "previous slide" / "last slide" / "prev slide"
-      if (
-        lower.includes("previous slide") ||
-        lower.includes("last slide") ||
-        lower.includes("prev slide")
-      ) {
-        callbacks.onPrev();
-        return true;
+    // "go to slide 8" / "slide eight" / "jump to slide 8"
+    const numbered = lower.match(
+      new RegExp(`(?:go|jump|move|open|show)?\\s*(?:to\\s*)?slide\\s*(?:number\\s*)?(\\d{1,3}|${NUM_WORDS})`),
+    );
+    if (numbered?.[1]) {
+      const n = toNumber(numbered[1]);
+      if (n != null) {
+        return cb.onGoToSlide(n - 1) === false ? "slide_not_found" : true;
       }
+    }
 
-      // Words to digits map for slide numbers
-      const wordsToNum: Record<string, number> = {
-        one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
-        eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20
-      };
+    // Clear all highlights.
+    if (/\bclear\b.*\bhighlight\b/.test(lower) || /\bremove all highlight\b/.test(lower)) {
+      cb.onClearHighlights();
+      return true;
+    }
 
-      // Go to slide by number: "go to slide 4" OR "slide four"
-      const slideMatch = lower.match(/(?:go to )?slide (\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)/);
-      if (slideMatch) {
-        const val = slideMatch[1];
-        const num = isNaN(Number(val)) ? wordsToNum[val] : parseInt(val, 10);
-        const success = callbacks.onGoToSlide(num - 1); // 0-indexed
-        return success === false ? "slide_not_found" : true;
-      }
+    // Remove a specific highlight.
+    const remove = lower.match(/remove (?:the )?highlight (?:from |on |of )?(.+)/);
+    if (remove?.[1]) {
+      cb.onRemoveHighlight(remove[1].trim());
+      return true;
+    }
 
-      // Exact number only: "4" OR "four"
-      const exactNumMatch = lower.match(/^(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)$/);
-      if (exactNumMatch) {
-        const val = exactNumMatch[1];
-        const num = isNaN(Number(val)) ? wordsToNum[val] : parseInt(val, 10);
-        const success = callbacks.onGoToSlide(num - 1); // 0-indexed
-        return success === false ? "slide_not_found" : true;
-      }
+    // Highlight with a colour.
+    const colored = lower.match(
+      new RegExp(`highlight (?:the )?(.+?) (?:in|with|using) (${COLORS.join("|")})`),
+    );
+    if (colored?.[1] && colored[2]) {
+      cb.onHighlight(colored[1].trim(), colored[2]);
+      return true;
+    }
 
-      // Go to slide by title text: "go to the introduction slide"
-      const textSlideMatch = lower.match(/go to the (.+?) slide/);
-      if (textSlideMatch) {
-        callbacks.onGoToSlideByText(textSlideMatch[1].trim());
-        return true;
-      }
+    // Plain highlight.
+    const highlight = lower.match(/highlight (?:the )?(.+)/);
+    if (highlight?.[1]) {
+      cb.onHighlight(highlight[1].trim(), "yellow");
+      return true;
+    }
 
-      // Clear all highlights
-      if (lower.includes("clear highlights") || lower.includes("clear all highlights")) {
-        callbacks.onClearHighlights();
-        return true;
-      }
+    // Navigation.
+    if (/\bnext\b/.test(lower) && /\bslide|page\b/.test(lower)) {
+      cb.onNext();
+      return true;
+    }
+    if (/^next$/.test(lower) || /\bnext slide\b/.test(lower)) {
+      cb.onNext();
+      return true;
+    }
+    if (
+      /\bprevious\b/.test(lower) ||
+      /\bgo back\b/.test(lower) ||
+      /\bback slide\b/.test(lower) ||
+      /^back$/.test(lower)
+    ) {
+      cb.onPrev();
+      return true;
+    }
 
-      // Remove specific highlight: "remove highlight india"
-      const removeMatch = lower.match(/remove highlight\s+(.+)/);
-      if (removeMatch) {
-        callbacks.onRemoveHighlight(removeMatch[1].trim());
-        return true;
-      }
+    // Go to a slide by its text/title.
+    const byText = lower.match(/go to (?:the )?(.+?) slide/);
+    if (byText?.[1]) {
+      cb.onGoToSlideByText(byText[1].trim());
+      return true;
+    }
 
-      // Highlight with color: "highlight india in red"
-      const colorMatch = lower.match(/highlight\s+(.+?)\s+in\s+(yellow|red|green|blue)/);
-      if (colorMatch) {
-        callbacks.onHighlight(colorMatch[1].trim(), colorMatch[2].trim());
-        return true;
-      }
-
-      // Default highlight: "highlight india"
-      const highlightMatch = lower.match(/highlight\s+(.+)/);
-      if (highlightMatch) {
-        callbacks.onHighlight(highlightMatch[1].trim(), "yellow");
-        return true;
-      }
-
-      // NOTE: Laser is intentionally EXCLUDED from voice commands.
-      // Laser is controlled by hand gestures only (index finger).
-
-      return false; // command not recognized
-    },
-    [] // No dependencies since it uses callbacksRef
-  );
+    // Anything else is normal presentation speech — ignore it.
+    return false;
+  }, []);
 
   useEffect(() => {
     if (!supported) return;
 
+    const Ctor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
     if (!enabled) {
-      if (recognitionRef.current) {
-        try { recognitionRef.current.stop(); } catch (e) { }
+      stoppingRef.current = true;
+      try {
+        recognitionRef.current?.stop();
+      } catch {
+        /* ignore */
       }
+      recognitionRef.current = null;
       setIsListening(false);
       setStatus("idle");
       setTranscript("");
       return;
     }
 
-    // Create recognition instance once
-    if (!recognitionRef.current) {
-      const recognition = new SpeechRecognition();
-      recognition.continuous = true;
-      recognition.interimResults = true; // get partial results as user speaks
-      recognition.lang = "en-US";
-      recognition.maxAlternatives = 1;
+    stoppingRef.current = false;
+    let restartTimer: number | null = null;
+    let watchdog: number | null = null;
+    let lastActivity = Date.now();
 
-      recognition.onstart = () => {
-        setIsListening(true);
-        setStatus("listening");
-      };
+    const recognition = new Ctor();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+    recognition.maxAlternatives = 3;
+    recognitionRef.current = recognition;
 
-      recognition.onresult = (event: any) => {
-        // Show interim (partial) transcript as user speaks
-        let interimTranscript = "";
-        let finalTranscript = "";
-
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const result = event.results[i];
-          if (result.isFinal) {
-            finalTranscript += result[0].transcript;
-          } else {
-            interimTranscript += result[0].transcript;
-          }
-        }
-
-        // Show what's being said in real time
-        const currentSpeech = finalTranscript || interimTranscript;
-        if (currentSpeech) {
-          setTranscript(currentSpeech);
-          setStatus("recognizing");
-        }
-
-        // Only process final results as commands
-        if (finalTranscript.trim()) {
-          const result = processCommand(finalTranscript.trim());
-          if (result === "slide_not_found") {
-            setStatus("slide_not_found");
-          } else {
-            setStatus(result ? "executed" : "not_recognized");
-          }
-          // Return to listening after 2s
-          setTimeout(() => {
-            if (enabledRef.current) setStatus("listening");
-          }, 2000);
-        }
-      };
-
-      recognition.onerror = (event: any) => {
-        if (event.error === "no-speech") {
-          // Not an error — just silence, keep listening
-          return;
-        }
-        if (event.error === "not-allowed" || event.error === "permission-denied") {
-          setStatus("permission_denied");
-          setIsListening(false);
-          return;
-        }
-        setStatus("error");
-        setIsListening(false);
-      };
-
-      recognition.onend = () => {
-        // Auto-restart if still enabled (continuous mode)
-        if (enabledRef.current) {
-          try { recognition.start(); } catch (e) { }
-        } else {
-          setIsListening(false);
-          setStatus("idle");
-        }
-      };
-
-      recognitionRef.current = recognition;
-    }
-
-    // Start if not already running
-    if (enabled && !isListening) {
-      try {
-        recognitionRef.current.start();
-      } catch (e) { }
-    }
-
-    return () => {
-      // Only cleanup on unmount, not on every render.
-      // If enabled becomes false, the early return above handles stopping.
+    const flashStatus = (next: VoiceStatus) => {
+      setStatus(next);
+      if (resetTimerRef.current) window.clearTimeout(resetTimerRef.current);
+      resetTimerRef.current = window.setTimeout(() => {
+        if (enabledRef.current) setStatus("listening");
+      }, 2000);
     };
-  }, [enabled, supported, processCommand, isListening]);
-  
-  // Cleanup entirely on unmount
-  useEffect(() => {
-    return () => {
-      if (recognitionRef.current) {
-        try { recognitionRef.current.stop(); } catch (e) { }
+
+    const safeStart = () => {
+      if (stoppingRef.current || !enabledRef.current) return;
+      try {
+        recognition.start();
+      } catch {
+        /* already started */
       }
     };
-  }, []);
 
-  return {
-    supported,
-    isListening,
-    transcript,
-    status,
-  };
+    recognition.onstart = () => {
+      lastActivity = Date.now();
+      setIsListening(true);
+      setStatus("listening");
+    };
+
+    recognition.onaudiostart = () => {
+      lastActivity = Date.now();
+    };
+
+    recognition.onresult = (event: any) => {
+      lastActivity = Date.now();
+      let interim = "";
+      let final = "";
+      let confidence = 1;
+      const alternatives: string[] = [];
+
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        if (!result) continue;
+        if (result.isFinal) {
+          final += result[0]?.transcript ?? "";
+          if (typeof result[0]?.confidence === "number" && result[0].confidence > 0) {
+            confidence = Math.min(confidence, result[0].confidence);
+          }
+          for (let a = 1; a < result.length; a++) {
+            const alt = result[a]?.transcript;
+            if (alt) alternatives.push(alt);
+          }
+        } else {
+          interim += result[0]?.transcript ?? "";
+        }
+      }
+
+      const speech = final || interim;
+      if (speech) {
+        setTranscript(speech.trim());
+        if (!final) setStatus("recognizing");
+      }
+
+      if (!final.trim()) return;
+
+      // Low-confidence results are still worth trying against strict command
+      // patterns, but never surface an error for them.
+      const confident = confidence >= thresholdRef.current;
+
+      let outcome = processCommand(final);
+      if (outcome === false) {
+        for (const alt of alternatives) {
+          const r = processCommand(alt);
+          if (r !== false) {
+            outcome = r;
+            break;
+          }
+        }
+      }
+
+      if (outcome === "slide_not_found") flashStatus("slide_not_found");
+      else if (outcome) flashStatus("executed");
+      else if (confident) flashStatus("not_recognized");
+      else setStatus("listening");
+    };
+
+    recognition.onerror = (event: any) => {
+      const err = event?.error;
+      if (err === "no-speech" || err === "aborted") return; // silence, keep going
+      if (err === "not-allowed" || err === "service-not-allowed" || err === "permission-denied") {
+        setStatus("permission_denied");
+        setIsListening(false);
+        stoppingRef.current = true;
+        return;
+      }
+      // network / audio-capture etc. → retry shortly
+      setStatus("error");
+      restartTimer = window.setTimeout(safeStart, 1200);
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+      if (stoppingRef.current || !enabledRef.current) {
+        setStatus("idle");
+        return;
+      }
+      // Automatic restart keeps listening continuous across browser timeouts.
+      restartTimer = window.setTimeout(safeStart, 350);
+    };
+
+    safeStart();
+
+    // Watchdog: some browsers silently stop delivering audio events.
+    watchdog = window.setInterval(() => {
+      if (!enabledRef.current || stoppingRef.current) return;
+      if (Date.now() - lastActivity > 12000) {
+        lastActivity = Date.now();
+        try {
+          recognition.stop(); // onend restarts it
+        } catch {
+          safeStart();
+        }
+      }
+    }, 5000);
+
+    return () => {
+      stoppingRef.current = true;
+      if (restartTimer) window.clearTimeout(restartTimer);
+      if (watchdog) window.clearInterval(watchdog);
+      if (resetTimerRef.current) window.clearTimeout(resetTimerRef.current);
+      try {
+        recognition.onend = null;
+        recognition.stop();
+      } catch {
+        /* ignore */
+      }
+      recognitionRef.current = null;
+    };
+  }, [enabled, supported, processCommand]);
+
+  return { supported, isListening, transcript, status };
 }
-
