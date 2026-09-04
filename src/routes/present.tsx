@@ -1,9 +1,17 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type MutableRefObject,
+  type RefObject,
+} from "react";
 import {
   ArrowLeft,
   ChevronLeft,
   ChevronRight,
+  Eraser,
   Hand,
   HelpCircle,
   Maximize,
@@ -19,9 +27,9 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
-import { DeckStage } from "@/components/presenter/DeckStage";
+import { DeckStage, type WritingStroke } from "@/components/presenter/DeckStage";
 import { CameraWindow } from "@/components/presenter/CameraWindow";
-import { useHandTracking } from "@/hooks/useHandTracking";
+import { useHandTracking, type IndexFingerPoint } from "@/hooks/useHandTracking";
 import { useVoiceControl, VoiceHighlight } from "@/hooks/useVoiceControl";
 import { Mic, MicOff, Sparkles } from "lucide-react";
 
@@ -102,6 +110,56 @@ function setStoredPlan(plan: string) {
   }
 }
 
+function capabilitiesForPlan(plan: string) {
+  const normalized = formatPlanBadge(plan);
+  return {
+    hands: true,
+    voice: normalized !== "MASTER HAND",
+    laser: normalized !== "MASTER WRITE",
+    writing: normalized === "MASTER WRITE",
+  };
+}
+
+type WritingTool =
+  "color-0" | "color-1" | "color-2" | "color-3" | "color-4" | "manual-eraser" | "full-eraser";
+type ActiveWritingTool = Exclude<WritingTool, "full-eraser">;
+
+const writingColors = ["#ef4444", "#2563eb", "#16a34a", "#eab308", "#a855f7"];
+const dwellMs = 520;
+const eraserRadius = 0.035;
+
+function toolColor(tool: ActiveWritingTool) {
+  if (!tool.startsWith("color-")) return writingColors[0]!;
+  const index = Number(tool.slice("color-".length));
+  return writingColors[index] ?? writingColors[0]!;
+}
+
+function distanceToSegment(
+  point: { x: number; y: number },
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return Math.hypot(point.x - a.x, point.y - a.y);
+  const t = Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / lenSq));
+  return Math.hypot(point.x - (a.x + dx * t), point.y - (a.y + dy * t));
+}
+
+function strokeTouchesPoint(stroke: WritingStroke, point: { x: number; y: number }) {
+  if (stroke.points.length === 1) {
+    const only = stroke.points[0];
+    return only ? Math.hypot(only.x - point.x, only.y - point.y) <= eraserRadius : false;
+  }
+  for (let i = 1; i < stroke.points.length; i += 1) {
+    const a = stroke.points[i - 1];
+    const b = stroke.points[i];
+    if (a && b && distanceToSegment(point, a, b) <= eraserRadius) return true;
+  }
+  return false;
+}
+
 function PresentPage() {
   const [phase, setPhase] = useState<Phase>("upload");
   const [progress, setProgress] = useState(0);
@@ -146,14 +204,25 @@ function PresentPage() {
 
   const [metadata, setMetadata] = useState<any[] | null>(null);
   const [highlights, setHighlights] = useState<VoiceHighlight[]>([]);
-  const [laserEnabled, setLaserEnabled] = useState(true);
+  const [writingBySlide, setWritingBySlide] = useState<Record<number, WritingStroke[]>>({});
+  const [activeWritingTool, setActiveWritingTool] = useState<ActiveWritingTool>("color-0");
+  const [hoveredWritingTool, setHoveredWritingTool] = useState<WritingTool | null>(null);
+  const capabilities = capabilitiesForPlan(planName);
 
   const slideCountRef = useRef(slideCount);
   slideCountRef.current = slideCount;
 
   const stageWrapRef = useRef<HTMLDivElement | null>(null);
+  const writingToolbarRef = useRef<HTMLDivElement | null>(null);
+  const writingToolRefs = useRef(new Map<WritingTool, HTMLButtonElement>());
+  const activeWritingToolRef = useRef<ActiveWritingTool>(activeWritingTool);
+  const activeStrokeIdRef = useRef<string | null>(null);
+  const hoveredWritingToolRef = useRef<WritingTool | null>(null);
+  const hoverStartedAtRef = useRef(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const fileRef = useRef<File | null>(null);
+
+  activeWritingToolRef.current = activeWritingTool;
 
   const go = useCallback(
     (delta: number) => {
@@ -168,10 +237,137 @@ function PresentPage() {
 
   const onAction = useCallback((action: "next" | "prev") => go(action === "next" ? 1 : -1), [go]);
 
+  const endActiveWritingStroke = useCallback(() => {
+    activeStrokeIdRef.current = null;
+  }, []);
+
+  const clearWriting = useCallback(() => {
+    activeStrokeIdRef.current = null;
+    setWritingBySlide((prev) => ({ ...prev, [index]: [] }));
+  }, [index]);
+
+  const eraseWritingAt = useCallback(
+    (point: { x: number; y: number }) => {
+      activeStrokeIdRef.current = null;
+      setWritingBySlide((prev) => {
+        const strokes = prev[index] ?? [];
+        const next = strokes.filter(
+          (stroke) => stroke.points.length === 0 || !strokeTouchesPoint(stroke, point),
+        );
+        if (next.length === strokes.length) return prev;
+        return { ...prev, [index]: next };
+      });
+    },
+    [index],
+  );
+
+  const appendWritingPoint = useCallback(
+    (point: { x: number; y: number }) => {
+      const color = toolColor(activeWritingToolRef.current);
+      setWritingBySlide((prev) => {
+        const strokes = prev[index] ?? [];
+        const last = strokes[strokes.length - 1];
+        const active =
+          last && last.id === activeStrokeIdRef.current && last.color === color
+            ? last
+            : { id: Math.random().toString(36).slice(2), color, points: [] };
+        activeStrokeIdRef.current = active.id;
+        const previousPoint = active.points[active.points.length - 1];
+        if (
+          previousPoint &&
+          Math.hypot(previousPoint.x - point.x, previousPoint.y - point.y) < 0.0025
+        ) {
+          return prev;
+        }
+
+        const updatedStroke = { ...active, points: [...active.points, point] };
+        return {
+          ...prev,
+          [index]:
+            last && last.id === active.id
+              ? [...strokes.slice(0, -1), updatedStroke]
+              : [...strokes, updatedStroke],
+        };
+      });
+    },
+    [index],
+  );
+
+  const handleIndexPoint = useCallback(
+    (point: IndexFingerPoint | null) => {
+      if (!capabilities.writing) return;
+
+      if (!point) {
+        setHoveredWritingTool(null);
+        hoveredWritingToolRef.current = null;
+        hoverStartedAtRef.current = 0;
+        endActiveWritingStroke();
+        return;
+      }
+
+      let targetTool: WritingTool | null = null;
+      writingToolRefs.current.forEach((button, tool) => {
+        const rect = button.getBoundingClientRect();
+        if (
+          point.screen.x >= rect.left &&
+          point.screen.x <= rect.right &&
+          point.screen.y >= rect.top &&
+          point.screen.y <= rect.bottom
+        ) {
+          targetTool = tool;
+        }
+      });
+
+      if (targetTool) {
+        endActiveWritingStroke();
+        if (hoveredWritingToolRef.current !== targetTool) {
+          hoveredWritingToolRef.current = targetTool;
+          setHoveredWritingTool(targetTool);
+          hoverStartedAtRef.current = performance.now();
+          return;
+        }
+        if (performance.now() - hoverStartedAtRef.current >= dwellMs) {
+          if (targetTool === "full-eraser") {
+            clearWriting();
+            endActiveWritingStroke();
+          } else {
+            setActiveWritingTool(targetTool);
+            activeWritingToolRef.current = targetTool;
+          }
+          hoverStartedAtRef.current = performance.now();
+        }
+        return;
+      }
+
+      if (hoveredWritingToolRef.current !== null) {
+        hoveredWritingToolRef.current = null;
+        setHoveredWritingTool(null);
+        hoverStartedAtRef.current = 0;
+      }
+
+      if (activeWritingToolRef.current === "manual-eraser") {
+        endActiveWritingStroke();
+        eraseWritingAt(point.slide);
+      } else if (activeWritingToolRef.current !== "full-eraser") {
+        appendWritingPoint(point.slide);
+      }
+    },
+    [
+      appendWritingPoint,
+      capabilities.writing,
+      clearWriting,
+      endActiveWritingStroke,
+      eraseWritingAt,
+    ],
+  );
+
   const { videoRef, status, error, gesture, handVisible, retry } = useHandTracking({
     enabled: phase === "preview" || phase === "ready",
     onAction,
     onPointer: setPointer,
+    pointerMode: capabilities.writing ? "writing" : "laser",
+    onWritePoint: () => undefined,
+    onIndexPoint: handleIndexPoint,
   });
 
   const handleFile = useCallback(async (file: File) => {
@@ -188,6 +384,7 @@ function PresentPage() {
     setSlideCount(0);
     setMetadata(null);
     setHighlights([]);
+    setWritingBySlide({});
     setPhase("uploading");
     setProgress(12);
     const buf = await file.arrayBuffer();
@@ -232,7 +429,7 @@ function PresentPage() {
   // Pro: read the uploaded deck's text boxes in the browser so voice
   // highlighting targets the real slide content. The file is never modified.
   useEffect(() => {
-    if (!isPro || !buffer || metadata !== null) return;
+    if (!capabilities.voice || !buffer || metadata !== null) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -246,7 +443,7 @@ function PresentPage() {
     return () => {
       cancelled = true;
     };
-  }, [isPro, buffer, metadata]);
+  }, [capabilities.voice, buffer, metadata]);
 
   const handleHighlight = useCallback(
     (text: string, color: string) => {
@@ -309,7 +506,9 @@ function PresentPage() {
             if (width > 0 && height > 0) {
               setHighlights((prev) => {
                 const filtered = prev.filter(
-                  (h) => !h.text.toLowerCase().includes(needle) && !needle.includes(h.text.toLowerCase()),
+                  (h) =>
+                    !h.text.toLowerCase().includes(needle) &&
+                    !needle.includes(h.text.toLowerCase()),
                 );
                 return [
                   ...filtered,
@@ -366,8 +565,12 @@ function PresentPage() {
     [metadata],
   );
 
-  const { micState, status: voiceStatus, supported } = useVoiceControl({
-    enabled: isPro && (phase === "preview" || phase === "ready"),
+  const {
+    micState,
+    status: voiceStatus,
+    supported,
+  } = useVoiceControl({
+    enabled: capabilities.voice && (phase === "preview" || phase === "ready"),
     extendedCommands: true,
     onNext: () => go(1),
     onPrev: () => go(-1),
@@ -521,7 +724,10 @@ function PresentPage() {
               <DeckStage
                 buffer={buffer}
                 index={index}
-                pointer={laserEnabled ? pointer : null}
+                pointer={capabilities.laser ? pointer : null}
+                writingStrokes={(writingBySlide[index] ?? []).filter(
+                  (stroke) => stroke.points.length > 0,
+                )}
                 highlights={highlights}
                 onReady={onReady}
                 onError={onDeckError}
@@ -551,8 +757,25 @@ function PresentPage() {
               <Button onClick={() => void toggleFullscreen()}>
                 <Maximize className="mr-1 h-4 w-4" /> Enter Fullscreen
               </Button>
-              <HowToControl isPro={isPro} />
-              {isPro && (
+              {capabilities.writing && (
+                <WritingToolbar
+                  activeTool={activeWritingTool}
+                  hoveredTool={hoveredWritingTool}
+                  toolbarRef={writingToolbarRef}
+                  toolRefs={writingToolRefs}
+                  onManualSelect={(tool) => {
+                    endActiveWritingStroke();
+                    if (tool === "full-eraser") {
+                      clearWriting();
+                      return;
+                    }
+                    setActiveWritingTool(tool);
+                    activeWritingToolRef.current = tool;
+                  }}
+                />
+              )}
+              <HowToControl planName={planName} />
+              {capabilities.voice && (
                 <div className="flex items-center gap-2 ml-2">
                   {!supported ? (
                     <div className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium border border-destructive/50 bg-destructive/10 text-destructive">
@@ -609,7 +832,86 @@ function PresentPage() {
   );
 }
 
-function HowToControl({ isPro }: { isPro: boolean }) {
+function WritingToolbar({
+  activeTool,
+  hoveredTool,
+  toolbarRef,
+  toolRefs,
+  onManualSelect,
+}: {
+  activeTool: ActiveWritingTool;
+  hoveredTool: WritingTool | null;
+  toolbarRef: RefObject<HTMLDivElement | null>;
+  toolRefs: MutableRefObject<Map<WritingTool, HTMLButtonElement>>;
+  onManualSelect: (tool: WritingTool) => void;
+}) {
+  const setToolRef = (tool: WritingTool) => (node: HTMLButtonElement | null) => {
+    if (node) {
+      toolRefs.current.set(tool, node);
+    } else {
+      toolRefs.current.delete(tool);
+    }
+  };
+
+  const toolClass = (tool: WritingTool) =>
+    activeTool === tool
+      ? "ring-2 ring-primary ring-offset-2 ring-offset-background"
+      : hoveredTool === tool
+        ? "ring-2 ring-amber-500 ring-offset-2 ring-offset-background"
+        : "";
+
+  return (
+    <div ref={toolbarRef} className="flex flex-wrap items-center gap-1.5">
+      {writingColors.map((color, index) => {
+        const tool = `color-${index}` as WritingTool;
+        return (
+          <button
+            key={tool}
+            ref={setToolRef(tool)}
+            type="button"
+            aria-label={`Writing color ${index + 1}`}
+            onClick={() => onManualSelect(tool)}
+            className={`h-8 w-8 rounded-full border border-border transition ${toolClass(tool)}`}
+            style={{ backgroundColor: color }}
+          />
+        );
+      })}
+      <Button
+        ref={setToolRef("manual-eraser")}
+        type="button"
+        variant="outline"
+        size="sm"
+        className={toolClass("manual-eraser")}
+        onClick={() => onManualSelect("manual-eraser")}
+      >
+        <Eraser className="mr-1 h-4 w-4" /> Manual Eraser
+      </Button>
+      <Button
+        ref={setToolRef("full-eraser")}
+        type="button"
+        variant="outline"
+        size="sm"
+        className={toolClass("full-eraser")}
+        onClick={() => onManualSelect("full-eraser")}
+      >
+        <Eraser className="mr-1 h-4 w-4" /> Full Eraser
+      </Button>
+    </div>
+  );
+}
+
+function HowToControl({ planName }: { planName: string }) {
+  const capabilities = capabilitiesForPlan(planName);
+  const handControls = [
+    { icon: "Palm", cmd: "Open Front Palm", desc: "Next Slide" },
+    { icon: "Fist", cmd: "Close hand -> reopen Front Palm", desc: "Next Slide again" },
+    { icon: "Back", cmd: "Back of Hand", desc: "Previous Slide" },
+    { icon: "Fist", cmd: "Close hand -> reopen Back of Hand", desc: "Previous Slide again" },
+    capabilities.writing
+      ? { icon: "Draw", cmd: "Raised Index Finger", desc: "Write on the slide" }
+      : { icon: "Point", cmd: "Raised Index Finger", desc: "Laser Pointer" },
+  ];
+
   return (
     <Dialog>
       <DialogTrigger asChild>
@@ -620,7 +922,13 @@ function HowToControl({ isPro }: { isPro: boolean }) {
       <DialogContent className="max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-display">How to Control</DialogTitle>
-          <DialogDescription>{isPro ? "Hand + Voice Controls" : "Hand + Camera"}</DialogDescription>
+          <DialogDescription>
+            {capabilities.writing
+              ? "Hand + Voice + Writing Controls"
+              : capabilities.voice
+                ? "Hand + Voice Controls"
+                : "Hand + Camera"}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="mt-1 rounded-2xl border border-border bg-card p-4">
@@ -628,31 +936,32 @@ function HowToControl({ isPro }: { isPro: boolean }) {
             <Hand className="h-4 w-4 text-primary" /> Hand + Camera
           </p>
           <ul className="space-y-3 text-sm">
-            {[
-              { icon: "🖐️", cmd: "Open Front Palm", desc: "Next Slide" },
-              { icon: "✊", cmd: "Close hand → reopen Front Palm", desc: "Next Slide again" },
-              { icon: "🖐️", cmd: "Back of Hand", desc: "Previous Slide" },
-              { icon: "✊", cmd: "Close hand → reopen Back of Hand", desc: "Previous Slide again" },
-              { icon: "☝️", cmd: "Raised Index Finger", desc: "Laser Pointer" },
-            ].map(({ icon, cmd, desc }) => (
+            {handControls.map(({ icon, cmd, desc }) => (
               <li key={cmd} className="flex items-start gap-3">
-                <span aria-hidden className="text-base leading-5">
+                <span
+                  aria-hidden
+                  className="w-10 shrink-0 font-mono text-[11px] leading-5 text-primary"
+                >
                   {icon}
                 </span>
                 <span>
                   <strong className="font-semibold">{cmd}</strong>
-                  <span className="text-muted-foreground"> → {desc}</span>
+                  <span className="text-muted-foreground">
+                    {" -> "}
+                    {desc}
+                  </span>
                 </span>
               </li>
             ))}
           </ul>
           <p className="mt-3 rounded-lg bg-primary-soft/50 px-3 py-2 text-xs text-muted-foreground">
-            The laser pointer works only from your hand — a raised index finger. It is never
-            triggered by voice.
+            {capabilities.writing
+              ? "In Master Write, the index finger is reserved for writing only. Laser pointer is not available and cannot be triggered accidentally."
+              : "The laser pointer works only from your hand - a raised index finger. It is never triggered by voice."}
           </p>
         </div>
 
-        {isPro && (
+        {capabilities.voice && (
           <div className="mt-4 rounded-2xl border border-border bg-card p-4">
             <p className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               <Mic className="h-4 w-4 text-primary" /> Voice
@@ -675,9 +984,45 @@ function HowToControl({ isPro }: { isPro: boolean }) {
             </ul>
             <p className="mt-3 rounded-lg bg-primary-soft/50 px-3 py-2 text-xs text-muted-foreground">
               The microphone starts automatically once you allow mic permission — no button needed.
-              The status dot shows green when a command is detected, yellow while listening, red when
-              voice is unavailable. Normal presentation speech is ignored — only these exact commands
-              run, and they change slides silently with no sounds or spoken responses.
+              The status dot shows green when a command is detected, yellow while listening, red
+              when voice is unavailable. Normal presentation speech is ignored — only these exact
+              commands run, and they change slides silently with no sounds or spoken responses.
+            </p>
+          </div>
+        )}
+
+        {capabilities.writing && (
+          <div className="mt-4 rounded-2xl border border-border bg-card p-4">
+            <p className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <Eraser className="h-4 w-4 text-primary" /> Writing Mode
+            </p>
+            <ul className="space-y-2.5 text-sm">
+              {[
+                { cmd: "Index finger", desc: "Draw smoothly on the current slide in real time" },
+                {
+                  cmd: "Lift finger",
+                  desc: "End the current stroke so the next line starts fresh",
+                },
+                { cmd: "Clear writing", desc: "Erase all writing from the current slide overlay" },
+                {
+                  cmd: "No laser",
+                  desc: "Master Write never activates laser pointer from the index finger",
+                },
+              ].map(({ cmd, desc }) => (
+                <li key={cmd} className="flex items-start gap-3">
+                  <span className="mt-0.5 shrink-0 rounded-md border border-border bg-secondary px-2 py-0.5 font-mono text-[11px] text-foreground whitespace-nowrap">
+                    {cmd}
+                  </span>
+                  <span className="text-muted-foreground">
+                    {"-> "}
+                    {desc}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-3 rounded-lg bg-primary-soft/50 px-3 py-2 text-xs text-muted-foreground">
+              Writing is a frontend overlay on top of the presentation. The original PPT/PPTX is
+              preserved exactly.
             </p>
           </div>
         )}

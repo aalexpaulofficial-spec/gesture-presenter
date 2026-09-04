@@ -7,17 +7,33 @@ type Previewer = {
   destroy: () => void;
 };
 
+export type WritingPoint = { x: number; y: number };
+export type WritingStroke = {
+  id: string;
+  color: string;
+  points: WritingPoint[];
+};
+
 type Props = {
   /** The user's uploaded deck. It is the only source of truth for what is shown. */
   buffer: ArrayBuffer;
   index: number;
   pointer: { x: number; y: number } | null;
+  writingStrokes?: WritingStroke[];
   highlights?: VoiceHighlight[];
   onReady: (info: { slideCount: number }) => void;
   onError: (message: string) => void;
 };
 
-export function DeckStage({ buffer, index, pointer, highlights = [], onReady, onError }: Props) {
+export function DeckStage({
+  buffer,
+  index,
+  pointer,
+  writingStrokes = [],
+  highlights = [],
+  onReady,
+  onError,
+}: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const previewerRef = useRef<Previewer | null>(null);
@@ -37,7 +53,11 @@ export function DeckStage({ buffer, index, pointer, highlights = [], onReady, on
       try {
         const { init } = await import("pptx-preview");
         const probeHost = document.createElement("div");
-        const probe = init(probeHost, { width: 10, height: 10, mode: "slide" }) as unknown as Previewer;
+        const probe = init(probeHost, {
+          width: 10,
+          height: 10,
+          mode: "slide",
+        }) as unknown as Previewer;
         const meta = await probe.load(buffer.slice(0));
         const w = Math.round(meta.width) || 960;
         const h = Math.round(meta.height) || 540;
@@ -56,7 +76,9 @@ export function DeckStage({ buffer, index, pointer, highlights = [], onReady, on
         readyRef.current({ slideCount });
       } catch {
         if (!cancelled) {
-          errorRef.current("We couldn't read this presentation. Please try another .ppt or .pptx file.");
+          errorRef.current(
+            "We couldn't read this presentation. Please try another .ppt or .pptx file.",
+          );
         }
       }
     }
@@ -117,7 +139,46 @@ export function DeckStage({ buffer, index, pointer, highlights = [], onReady, on
             <span className="block h-4 w-4 rounded-full bg-[oklch(0.62_0.24_25)] shadow-[0_0_22px_10px_oklch(0.62_0.24_25/0.45)]" />
           </div>
         ) : null}
-        
+
+        {/* Writing overlay - frontend-only annotation strokes, never edits the uploaded deck. */}
+        {dims && writingStrokes.length > 0 ? (
+          <svg
+            className="pointer-events-none absolute inset-0 z-[25]"
+            viewBox="0 0 1 1"
+            preserveAspectRatio="none"
+            aria-hidden="true"
+          >
+            {writingStrokes.map((stroke) => {
+              if (stroke.points.length === 0) return null;
+              if (stroke.points.length === 1) {
+                const point = stroke.points[0];
+                if (!point) return null;
+                return (
+                  <circle
+                    key={stroke.id}
+                    cx={point.x}
+                    cy={point.y}
+                    r={0.0045}
+                    fill={stroke.color}
+                  />
+                );
+              }
+              return (
+                <polyline
+                  key={stroke.id}
+                  points={stroke.points.map((p) => `${p.x},${p.y}`).join(" ")}
+                  fill="none"
+                  stroke={stroke.color}
+                  strokeWidth={0.0065}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  vectorEffect="non-scaling-stroke"
+                />
+              );
+            })}
+          </svg>
+        ) : null}
+
         {/* Voice highlights */}
         {highlights.map((h) => {
           const colorKey = h.color.toLowerCase();

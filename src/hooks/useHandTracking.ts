@@ -13,14 +13,28 @@ const MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
 
 export type CameraStatus = "idle" | "starting" | "live" | "error";
+export type IndexFingerPoint = {
+  slide: { x: number; y: number };
+  screen: { x: number; y: number };
+};
 
 type Options = {
   enabled: boolean;
   onAction: (action: "next" | "prev") => void;
   onPointer: (point: { x: number; y: number } | null) => void;
+  pointerMode?: "laser" | "writing";
+  onWritePoint?: (point: { x: number; y: number } | null) => void;
+  onIndexPoint?: (point: IndexFingerPoint | null) => void;
 };
 
-export function useHandTracking({ enabled, onAction, onPointer }: Options) {
+export function useHandTracking({
+  enabled,
+  onAction,
+  onPointer,
+  pointerMode = "laser",
+  onWritePoint,
+  onIndexPoint,
+}: Options) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [status, setStatus] = useState<CameraStatus>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -29,8 +43,14 @@ export function useHandTracking({ enabled, onAction, onPointer }: Options) {
 
   const actionRef = useRef(onAction);
   const pointerRef = useRef(onPointer);
+  const writePointRef = useRef(onWritePoint);
+  const indexPointRef = useRef(onIndexPoint);
+  const pointerModeRef = useRef(pointerMode);
   actionRef.current = onAction;
   pointerRef.current = onPointer;
+  writePointRef.current = onWritePoint;
+  indexPointRef.current = onIndexPoint;
+  pointerModeRef.current = pointerMode;
 
   const [attempt, setAttempt] = useState(0);
   const retry = useCallback(() => {
@@ -44,8 +64,10 @@ export function useHandTracking({ enabled, onAction, onPointer }: Options) {
     let cancelled = false;
     let raf = 0;
     let stream: MediaStream | null = null;
-    let landmarker: { detectForVideo: (v: HTMLVideoElement, t: number) => unknown; close: () => void } | null =
-      null;
+    let landmarker: {
+      detectForVideo: (v: HTMLVideoElement, t: number) => unknown;
+      close: () => void;
+    } | null = null;
     const smoother = new PointSmoother();
     const gate = new GestureGate();
     let lastTs = -1;
@@ -100,8 +122,11 @@ export function useHandTracking({ enabled, onAction, onPointer }: Options) {
 
         const loop = () => {
           raf = requestAnimationFrame(loop);
-          
-          if (stream && (!stream.active || stream.getTracks().some(t => t.readyState === "ended"))) {
+
+          if (
+            stream &&
+            (!stream.active || stream.getTracks().some((t) => t.readyState === "ended"))
+          ) {
             setAttempt((a) => a + 1);
             return;
           }
@@ -124,6 +149,8 @@ export function useHandTracking({ enabled, onAction, onPointer }: Options) {
             setGesture("none");
             smoother.reset();
             pointerRef.current(null);
+            writePointRef.current?.(null);
+            indexPointRef.current?.(null);
             gate.update("none", performance.now());
             return;
           }
@@ -136,11 +163,27 @@ export function useHandTracking({ enabled, onAction, onPointer }: Options) {
             const tip = lm[8];
             if (tip) {
               const mapped = mapToSlide(tip.x, tip.y);
-              pointerRef.current(smoother.next(mapped.x, mapped.y));
+              const smoothed = smoother.next(mapped.x, mapped.y);
+              indexPointRef.current?.({
+                slide: smoothed,
+                screen: {
+                  x: (1 - tip.x) * window.innerWidth,
+                  y: tip.y * window.innerHeight,
+                },
+              });
+              if (pointerModeRef.current === "writing") {
+                pointerRef.current(null);
+                writePointRef.current?.(smoothed);
+              } else {
+                pointerRef.current(smoothed);
+                writePointRef.current?.(null);
+              }
             }
           } else {
             smoother.reset();
             pointerRef.current(null);
+            writePointRef.current?.(null);
+            indexPointRef.current?.(null);
           }
 
           const action = gate.update(g, performance.now());

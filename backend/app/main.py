@@ -13,7 +13,7 @@ import io
 import uuid
 from typing import Any
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel
@@ -35,6 +35,29 @@ app.add_middleware(
 store = DeckStore()
 
 
+def normalize_plan(plan: str | None) -> str:
+    p = (plan or "Master Hand").strip().lower().replace("_", " ").replace("-", " ")
+    if "write" in p:
+        return "MASTER WRITE"
+    if "voice" in p or p == "pro":
+        return "MASTER VOICE"
+    if "ai" in p:
+        return "MASTER AI"
+    if "business" in p:
+        return "BUSINESS"
+    return "MASTER HAND"
+
+
+def capabilities_for_plan(plan: str) -> dict[str, bool]:
+    normalized = normalize_plan(plan)
+    return {
+        "hands": True,
+        "voice": normalized != "MASTER HAND",
+        "laser": normalized != "MASTER WRITE",
+        "writing": normalized == "MASTER WRITE",
+    }
+
+
 class TextElement(BaseModel):
     text: str
     left: float
@@ -53,6 +76,8 @@ class SlideInfo(BaseModel):
 class DeckResponse(BaseModel):
     deck_id: str
     file_name: str
+    active_plan: str
+    capabilities: dict[str, bool]
     slide_count: int
     width_points: float
     height_points: float
@@ -66,7 +91,7 @@ def health() -> dict[str, str]:
 
 
 @app.post("/decks", response_model=DeckResponse)
-async def create_deck(file: UploadFile = File(...)) -> Any:
+async def create_deck(file: UploadFile = File(...), plan: str = Form("Master Hand")) -> Any:
     name = file.filename or "presentation.pptx"
     if not name.lower().endswith(ALLOWED_SUFFIXES):
         raise HTTPException(status_code=415, detail="Please upload a .ppt or .pptx presentation.")
@@ -86,8 +111,15 @@ async def create_deck(file: UploadFile = File(...)) -> Any:
         ) from exc
 
     deck_id = uuid.uuid4().hex
-    store.put(deck_id, name=name, payload=payload)
-    return {"deck_id": deck_id, "file_name": name, **analysis}
+    active_plan = normalize_plan(plan)
+    store.put(deck_id, name=name, payload=payload, plan=active_plan)
+    return {
+        "deck_id": deck_id,
+        "file_name": name,
+        "active_plan": active_plan,
+        "capabilities": capabilities_for_plan(active_plan),
+        **analysis,
+    }
 
 
 @app.get("/decks/{deck_id}", response_model=DeckResponse)
@@ -98,6 +130,8 @@ def get_deck(deck_id: str) -> Any:
     return {
         "deck_id": deck_id,
         "file_name": record.name,
+        "active_plan": record.plan,
+        "capabilities": capabilities_for_plan(record.plan),
         **analyse_presentation(io.BytesIO(record.payload)),
     }
 

@@ -696,18 +696,17 @@ function Pricing() {
       search: { plan: "Master Write", pro: true } as Record<string, unknown>,
       badge: "POWERED BY LIGHTNING AI",
       highlight: false,
+      hasWritePreview: true,
       trialNote: "Unlimited",
       features: [
-        "Everything in Master Voice",
-        "Hand-controlled writing",
-        "Real-time presentation drawing",
+        "Hands → slide navigation",
+        "Voice → next / previous / direct slide number",
+        "Writing Mode → index finger writes on the slide",
         "Multiple writing strokes",
         "Clear / erase writing",
         "Smooth low-latency drawing",
-        "Accurate slide coordinate mapping",
-        "Highlight presentation content",
-        "Remove Highlights",
-        "Clear Highlights",
+        "Accurate full-slide coordinate mapping",
+        "No Laser Pointer in Master Write",
         "Original PPT/PPTX remains unchanged",
       ],
     },
@@ -853,6 +852,24 @@ function Pricing() {
                       <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" /> Red → mic off /
                       unavailable / error
                     </p>
+                  </div>
+                </div>
+              )}
+
+              {(t as any).hasWritePreview && (
+                <div className="relative mt-5 overflow-hidden rounded-xl border border-primary/20 bg-primary/5 p-4">
+                  <div className="absolute right-0 top-0 p-2 opacity-10">
+                    <MousePointer2 className="h-10 w-10" />
+                  </div>
+                  <h4 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-primary">
+                    <Hand className="h-4 w-4" /> MASTER WRITE CONTROL
+                  </h4>
+                  <div className="space-y-1.5 text-[11px] text-muted-foreground">
+                    <p>Hands - slide navigation</p>
+                    <p>Voice - next / previous / direct slide number</p>
+                    <p>Writing Mode - index finger writes on the slide</p>
+                    <p>Multiple strokes with clear / erase writing</p>
+                    <p className="font-semibold text-foreground">No Laser Pointer in Master Write</p>
                   </div>
                 </div>
               )}

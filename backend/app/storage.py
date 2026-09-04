@@ -13,6 +13,7 @@ TTL_SECONDS = 60 * 60 * 6
 class DeckRecord:
     name: str
     payload: bytes
+    plan: str
     created_at: float = field(default_factory=time.time)
 
 
@@ -23,10 +24,10 @@ class DeckStore:
         self._items: dict[str, DeckRecord] = {}
         self._lock = threading.Lock()
 
-    def put(self, deck_id: str, *, name: str, payload: bytes) -> None:
+    def put(self, deck_id: str, *, name: str, payload: bytes, plan: str = "MASTER HAND") -> None:
         with self._lock:
             self._prune()
-            self._items[deck_id] = DeckRecord(name=name, payload=payload)
+            self._items[deck_id] = DeckRecord(name=name, payload=payload, plan=plan)
 
     def get(self, deck_id: str) -> DeckRecord | None:
         with self._lock:
