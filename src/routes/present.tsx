@@ -37,7 +37,8 @@ export const Route = createFileRoute("/present")({
       { property: "og:title", content: "Present with your hands — Master Presenter" },
       {
         property: "og:description",
-        content: "Upload a presentation and control it with hand gestures, straight from your browser.",
+        content:
+          "Upload a presentation and control it with hand gestures, straight from your browser.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -45,10 +46,11 @@ export const Route = createFileRoute("/present")({
     ],
   }),
   validateSearch: (search: Record<string, unknown>): { pro?: boolean; plan?: string } => {
-    return {
-      pro: search['pro'] === true || search['pro'] === 'true',
-      plan: typeof search['plan'] === 'string' ? search['plan'] : undefined,
-    }
+    const out: { pro?: boolean; plan?: string } = {
+      pro: search["pro"] === true || search["pro"] === "true",
+    };
+    if (typeof search["plan"] === "string") out.plan = search["plan"];
+    return out;
   },
   component: PresentPage,
 });
@@ -64,6 +66,15 @@ const phaseCopy: Record<Exclude<Phase, "upload" | "ready" | "failed">, string> =
 function formatPlanBadge(plan?: string | null): string {
   if (!plan) return "MASTER HAND";
   const p = plan.trim().toLowerCase();
+  if (p === "master voice" || p === "master_voice" || p === "mastervoice" || p === "voice") {
+    return "MASTER VOICE";
+  }
+  if (p === "master write" || p === "master_write" || p === "masterwrite" || p === "write") {
+    return "MASTER WRITE";
+  }
+  if (p === "master ai" || p === "master_ai" || p === "masterai" || p === "ai") {
+    return "MASTER AI";
+  }
   if (p.includes("voice")) return "MASTER VOICE";
   if (p.includes("write")) return "MASTER WRITE";
   if (p.includes("ai")) return "MASTER AI";
@@ -113,10 +124,10 @@ function PresentPage() {
     const initial = search.plan
       ? formatPlanBadge(search.plan)
       : getStoredPlan()
-      ? formatPlanBadge(getStoredPlan())
-      : search.pro
-      ? "MASTER VOICE"
-      : "MASTER HAND";
+        ? formatPlanBadge(getStoredPlan())
+        : search.pro
+          ? "MASTER VOICE"
+          : "MASTER HAND";
     return initial !== "MASTER HAND";
   });
 
@@ -176,7 +187,7 @@ function PresentPage() {
     const buf = await file.arrayBuffer();
     setProgress(45);
     setPhase("analyzing");
-    
+
     await new Promise((r) => setTimeout(r, 220));
 
     setProgress(72);
@@ -231,58 +242,72 @@ function PresentPage() {
     };
   }, [isPro, buffer, metadata]);
 
-  const handleHighlight = useCallback((text: string, color: string) => {
-    const slide = metadata?.[index];
-    if (!slide) return;
-    const elements: any[] = slide.text_elements || [];
-    const needle = text.toLowerCase().trim();
-    const match =
-      elements.find((e) => e.text.toLowerCase().includes(needle)) ??
-      elements.find((e) =>
-        needle
-          .split(" ")
-          .some((word) => word.length > 2 && e.text.toLowerCase().includes(word)),
-      );
-    if (match) {
-      setHighlights((prev) => [
-        ...prev,
-        {
-          id: Math.random().toString(36).slice(2),
-          text: match.text,
-          color,
-          box: { left: match.left, top: match.top, width: match.width, height: match.height },
-        },
-      ]);
-    }
-  }, [metadata, index]);
+  const handleHighlight = useCallback(
+    (text: string, color: string) => {
+      const slide = metadata?.[index];
+      if (!slide) return;
+      const elements: any[] = slide.text_elements || [];
+      const needle = text.toLowerCase().trim();
+      const match =
+        elements.find((e) => e.text.toLowerCase().includes(needle)) ??
+        elements.find((e) =>
+          needle.split(" ").some((word) => word.length > 2 && e.text.toLowerCase().includes(word)),
+        );
+      if (match) {
+        setHighlights((prev) => [
+          ...prev,
+          {
+            id: Math.random().toString(36).slice(2),
+            text: match.text,
+            color,
+            box: { left: match.left, top: match.top, width: match.width, height: match.height },
+          },
+        ]);
+      }
+    },
+    [metadata, index],
+  );
 
   const handleRemoveHighlight = useCallback((text: string) => {
-    setHighlights(prev => prev.filter(h => !h.text.toLowerCase().includes(text.toLowerCase())));
+    setHighlights((prev) => prev.filter((h) => !h.text.toLowerCase().includes(text.toLowerCase())));
   }, []);
 
   const handleClearHighlights = useCallback(() => {
     setHighlights([]);
   }, []);
 
-  const handleGoToSlideByText = useCallback((text: string) => {
-    if (!metadata) return;
-    const lowerText = text.toLowerCase();
-    
-    const matchingSlideIndex = metadata.findIndex((slide: any) => {
-      if (slide.title && slide.title.toLowerCase().includes(lowerText)) return true;
-      if (slide.text_elements) {
-        return slide.text_elements.some((el: any) => el.text.toLowerCase().includes(lowerText));
+  const handleGoToSlideByText = useCallback(
+    (text: string) => {
+      if (!metadata) return;
+      const lowerText = text.toLowerCase();
+
+      const matchingSlideIndex = metadata.findIndex((slide: any) => {
+        if (slide.title && slide.title.toLowerCase().includes(lowerText)) return true;
+        if (slide.text_elements) {
+          return slide.text_elements.some((el: any) => el.text.toLowerCase().includes(lowerText));
+        }
+        return false;
+      });
+
+      if (matchingSlideIndex !== -1) {
+        setIndex(matchingSlideIndex);
       }
-      return false;
-    });
+    },
+    [metadata],
+  );
 
-    if (matchingSlideIndex !== -1) {
-      setIndex(matchingSlideIndex);
-    }
-  }, [metadata]);
-
-  const { isListening, status: voiceStatus, transcript, supported } = useVoiceControl({
+  const {
+    micOn,
+    setMicOn,
+    micState,
+    transcript,
+    status: voiceStatus,
+    supported,
+  } = useVoiceControl({
     enabled: isPro && (phase === "preview" || phase === "ready"),
+    // Master Voice keeps the strict command set: "next" / "previous" / NUMBER.
+    // Master Write / Master AI additionally use highlight + "go to … slide".
+    extendedCommands: planName !== "MASTER VOICE",
     onNext: () => go(1),
     onPrev: () => go(-1),
     onGoToSlide: (slide: number) => {
@@ -294,8 +319,41 @@ function PresentPage() {
     onHighlight: handleHighlight,
     onRemoveHighlight: handleRemoveHighlight,
     onClearHighlights: handleClearHighlights,
-    onGoToSlideByText: handleGoToSlideByText
+    onGoToSlideByText: handleGoToSlideByText,
   });
+
+  // Chip label for the fine-grained voice status (the colour itself is micState).
+  let statusLabel = "Mic Off";
+  if (supported && micOn) {
+    switch (voiceStatus) {
+      case "starting":
+        statusLabel = "Starting mic…";
+        break;
+      case "listening":
+        statusLabel = "Listening — say “next”, “previous” or a slide number";
+        break;
+      case "recognizing":
+        statusLabel = "Voice detected";
+        break;
+      case "executed":
+        statusLabel = "Command executed";
+        break;
+      case "not_recognized":
+        statusLabel = "Command not recognized";
+        break;
+      case "slide_not_found":
+        statusLabel = "Slide not found";
+        break;
+      case "permission_denied":
+        statusLabel = "Permission denied";
+        break;
+      case "error":
+        statusLabel = "Mic error — retrying…";
+        break;
+      default:
+        statusLabel = "Listening…";
+    }
+  }
 
   // Clear highlights when slide changes
   useEffect(() => {
@@ -331,11 +389,13 @@ function PresentPage() {
               </span>
               Master Presenter
             </Link>
-            <span className={`ml-2 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-              isPro
-                ? 'bg-primary/20 text-primary'
-                : 'bg-secondary text-muted-foreground border border-border'
-            }`}>
+            <span
+              className={`ml-2 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                isPro
+                  ? "bg-primary/20 text-primary"
+                  : "bg-secondary text-muted-foreground border border-border"
+              }`}
+            >
               {planName.toUpperCase()}
             </span>
           </div>
@@ -344,7 +404,8 @@ function PresentPage() {
             {!isPro && phase === "upload" && (
               <Button asChild size="sm" variant="outline">
                 <Link to="/" hash="pricing">
-                  <Sparkles className="mr-1.5 h-3.5 w-3.5" /> Get Free Premium Master Plans — Unlimited
+                  <Sparkles className="mr-1.5 h-3.5 w-3.5" /> Get Free Premium Master Plans —
+                  Unlimited
                 </Link>
               </Button>
             )}
@@ -359,7 +420,8 @@ function PresentPage() {
               Upload your presentation
             </h1>
             <p className="mx-auto mt-3 max-w-md text-sm text-muted-foreground">
-              Your slides stay exactly as you designed them. Nothing is redesigned, replaced or reformatted.
+              Your slides stay exactly as you designed them. Nothing is redesigned, replaced or
+              reformatted.
             </p>
             <label
               className="mt-8 flex cursor-pointer flex-col items-center gap-3 rounded-3xl border-2 border-dashed border-border bg-card px-6 py-14 transition-colors hover:border-primary/60 hover:bg-primary-soft/40"
@@ -371,7 +433,9 @@ function PresentPage() {
               }}
             >
               <UploadCloud className="h-9 w-9 text-primary" />
-              <span className="font-display text-base font-semibold">Choose a .ppt or .pptx file</span>
+              <span className="font-display text-base font-semibold">
+                Choose a .ppt or .pptx file
+              </span>
               <span className="text-xs text-muted-foreground">or drag and drop it here</span>
               <input
                 ref={inputRef}
@@ -437,26 +501,50 @@ function PresentPage() {
                     </div>
                   ) : (
                     <div className="flex flex-col gap-1 items-start justify-center">
-                      <div className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium border transition-colors ${
-                        voiceStatus === 'listening'   ? 'border-primary/50 bg-primary/10 text-primary' :
-                        voiceStatus === 'recognizing' ? 'border-amber-500/50 bg-amber-500/10 text-amber-600' :
-                        voiceStatus === 'executed'    ? 'border-green-500/50 bg-green-500/10 text-green-600' :
-                        voiceStatus === 'not_recognized' ? 'border-amber-500/50 bg-amber-500/10 text-amber-600' :
-                        voiceStatus === 'slide_not_found' ? 'border-amber-500/50 bg-amber-500/10 text-amber-600' :
-                        voiceStatus === 'permission_denied' || voiceStatus === 'error' ? 'border-destructive/50 bg-destructive/10 text-destructive' :
-                        'border-border bg-card text-muted-foreground'
-                      }`}>
-                        {isListening
-                          ? <Mic className="h-3.5 w-3.5 animate-pulse" />
-                          : <MicOff className="h-3.5 w-3.5" />}
-                        {voiceStatus === 'listening'  ? 'Listening...' :
-                         voiceStatus === 'recognizing'? 'Recognizing...' :
-                         voiceStatus === 'executed'   ? 'Command executed' :
-                         voiceStatus === 'not_recognized' ? 'Command not recognized' :
-                         voiceStatus === 'slide_not_found'? 'Slide not found' :
-                         voiceStatus === 'permission_denied' ? 'Permission denied' :
-                         voiceStatus === 'error'      ? 'Mic Error' :
-                         'Ready'}
+                      <div className="flex items-center gap-2">
+                        {/* Mic ON/OFF — switching is completely silent and
+                            actually stops/starts speech recognition. */}
+                        <Button
+                          size="sm"
+                          variant={micOn ? "secondary" : "outline"}
+                          onClick={() => setMicOn(!micOn)}
+                          className="h-8 rounded-full px-3"
+                          aria-pressed={micOn}
+                        >
+                          {micOn ? (
+                            <Mic className="mr-1 h-3.5 w-3.5" />
+                          ) : (
+                            <MicOff className="mr-1 h-3.5 w-3.5" />
+                          )}
+                          {micOn ? "Mic On" : "Mic Off"}
+                        </Button>
+                        {/* GREEN = voice detected · YELLOW = listening/ready ·
+                            RED = mic off / error / unavailable */}
+                        <div
+                          className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium border transition-colors ${
+                            micState === "green"
+                              ? "border-green-500/60 bg-green-500/10 text-green-600"
+                              : micState === "yellow"
+                                ? "border-amber-500/60 bg-amber-500/10 text-amber-600"
+                                : "border-destructive/50 bg-destructive/10 text-destructive"
+                          }`}
+                        >
+                          <span
+                            className={`h-2.5 w-2.5 rounded-full transition-colors ${
+                              micState === "green"
+                                ? "bg-green-500"
+                                : micState === "yellow"
+                                  ? "bg-amber-500"
+                                  : "bg-red-500"
+                            }`}
+                          />
+                          {micOn ? (
+                            <Mic className="h-3.5 w-3.5" />
+                          ) : (
+                            <MicOff className="h-3.5 w-3.5" />
+                          )}
+                          {statusLabel}
+                        </div>
                       </div>
                       {transcript && (
                         <div className="text-xs text-muted-foreground italic px-2 max-w-[200px] truncate">
@@ -500,12 +588,8 @@ function HowToControl({ isPro }: { isPro: boolean }) {
       </DialogTrigger>
       <DialogContent className="max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="font-display">
-            How to Control
-          </DialogTitle>
-          <DialogDescription>
-            {isPro ? "Pro Controls — Hand + Camera + Voice" : "Hand + Camera"}
-          </DialogDescription>
+          <DialogTitle className="font-display">How to Control</DialogTitle>
+          <DialogDescription>{isPro ? "Hand + Voice Controls" : "Hand + Camera"}</DialogDescription>
         </DialogHeader>
 
         <div className="mt-1 rounded-2xl border border-border bg-card p-4">
@@ -521,7 +605,9 @@ function HowToControl({ isPro }: { isPro: boolean }) {
               { icon: "☝️", cmd: "Raised Index Finger", desc: "Laser Pointer" },
             ].map(({ icon, cmd, desc }) => (
               <li key={cmd} className="flex items-start gap-3">
-                <span aria-hidden className="text-base leading-5">{icon}</span>
+                <span aria-hidden className="text-base leading-5">
+                  {icon}
+                </span>
                 <span>
                   <strong className="font-semibold">{cmd}</strong>
                   <span className="text-muted-foreground"> → {desc}</span>
@@ -542,14 +628,11 @@ function HowToControl({ isPro }: { isPro: boolean }) {
             </p>
             <ul className="space-y-2.5 text-sm">
               {[
-                { cmd: "Next Slide",             desc: "Go to the next slide" },
-                { cmd: "Previous Slide",         desc: "Go to the previous slide" },
-                { cmd: "4",                      desc: "Jump straight to slide 4" },
-                { cmd: "Go to Slide 8",          desc: "Jump to slide 8" },
-                { cmd: "Highlight India",        desc: "Highlight “India” on this slide" },
-                { cmd: "Highlight India in red", desc: "Highlight it in red, yellow, green or blue" },
-                { cmd: "Remove Highlight India", desc: "Remove just that highlight" },
-                { cmd: "Clear Highlights",       desc: "Remove every highlight on this slide" },
+                { cmd: "next", desc: "Go to the next slide" },
+                { cmd: "previous", desc: "Go to the previous slide" },
+                { cmd: "8", desc: "Jump straight to Slide 8" },
+                { cmd: "15", desc: "Jump straight to Slide 15" },
+                { cmd: "eight", desc: "Number words work too — “eight” opens Slide 8" },
               ].map(({ cmd, desc }) => (
                 <li key={cmd} className="flex items-start gap-3">
                   <span className="mt-0.5 shrink-0 rounded-md border border-border bg-secondary px-2 py-0.5 font-mono text-[11px] text-foreground whitespace-nowrap">
@@ -560,9 +643,10 @@ function HowToControl({ isPro }: { isPro: boolean }) {
               ))}
             </ul>
             <p className="mt-3 rounded-lg bg-primary-soft/50 px-3 py-2 text-xs text-muted-foreground">
-              The microphone listens continuously alongside the camera. Normal presentation speech is
-              ignored — only these commands run. Watch the “Listening…” chip beside the controls to
-              see what was heard.
+              Turn the mic on with the “Mic On” button. The status dot shows green while you speak,
+              yellow while listening, red when the mic is off or unavailable. The microphone listens
+              continuously alongside the camera. Normal presentation speech is ignored — only these
+              commands run, and they change slides silently with no sounds or spoken responses.
             </p>
           </div>
         )}

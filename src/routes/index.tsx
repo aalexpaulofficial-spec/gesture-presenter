@@ -94,7 +94,9 @@ function Landing() {
             <span className="grid h-9 w-9 place-items-center rounded-xl bg-primary text-primary-foreground shadow-soft">
               <Hand className="h-4.5 w-4.5" />
             </span>
-            <span className="font-display text-[15px] font-semibold tracking-tight">Master Presenter</span>
+            <span className="font-display text-[15px] font-semibold tracking-tight">
+              Master Presenter
+            </span>
           </a>
 
           <nav className="hidden items-center gap-8 md:flex">
@@ -132,7 +134,9 @@ function Landing() {
               className="rounded-lg p-2 md:hidden"
               onClick={() => setMenuOpen((o) => !o)}
             >
-              <ChevronDown className={`h-4 w-4 transition-transform ${menuOpen ? "rotate-180" : ""}`} />
+              <ChevronDown
+                className={`h-4 w-4 transition-transform ${menuOpen ? "rotate-180" : ""}`}
+              />
             </button>
           </div>
         </div>
@@ -204,39 +208,66 @@ function Landing() {
               <div className="rounded-xl border border-border bg-card p-4 space-y-2">
                 <p className="font-semibold text-foreground">On iPhone & iPad (Safari):</p>
                 <ol className="list-decimal list-inside space-y-1.5 text-xs leading-relaxed">
-                  <li>Tap the <strong>Share</strong> button (box with an arrow ⎋) in Safari’s toolbar.</li>
-                  <li>Scroll down and tap <strong>Add to Home Screen</strong> (+).</li>
-                  <li>Tap <strong>Add</strong> in the top right corner.</li>
+                  <li>
+                    Tap the <strong>Share</strong> button (box with an arrow ⎋) in Safari’s toolbar.
+                  </li>
+                  <li>
+                    Scroll down and tap <strong>Add to Home Screen</strong> (+).
+                  </li>
+                  <li>
+                    Tap <strong>Add</strong> in the top right corner.
+                  </li>
                 </ol>
               </div>
             ) : platform === "android" ? (
               <div className="rounded-xl border border-border bg-card p-4 space-y-2">
-                <p className="font-semibold text-foreground">On Android (Chrome / Edge / Firefox):</p>
+                <p className="font-semibold text-foreground">
+                  On Android (Chrome / Edge / Firefox):
+                </p>
                 <ol className="list-decimal list-inside space-y-1.5 text-xs leading-relaxed">
-                  <li>Tap the menu icon (<strong>⋮</strong>) in the top-right corner.</li>
-                  <li>Select <strong>Install app</strong> or <strong>Add to Home screen</strong>.</li>
+                  <li>
+                    Tap the menu icon (<strong>⋮</strong>) in the top-right corner.
+                  </li>
+                  <li>
+                    Select <strong>Install app</strong> or <strong>Add to Home screen</strong>.
+                  </li>
                 </ol>
               </div>
             ) : platform === "mac_safari" ? (
               <div className="rounded-xl border border-border bg-card p-4 space-y-2">
                 <p className="font-semibold text-foreground">On Mac (Safari):</p>
                 <ol className="list-decimal list-inside space-y-1.5 text-xs leading-relaxed">
-                  <li>In the top menu bar, click <strong>File</strong>.</li>
-                  <li>Select <strong>Add to Dock...</strong>, then click <strong>Add</strong>.</li>
+                  <li>
+                    In the top menu bar, click <strong>File</strong>.
+                  </li>
+                  <li>
+                    Select <strong>Add to Dock...</strong>, then click <strong>Add</strong>.
+                  </li>
                 </ol>
               </div>
             ) : (
               <div className="rounded-xl border border-border bg-card p-4 space-y-2">
-                <p className="font-semibold text-foreground">On Desktop (Chrome / Edge / Windows / Mac):</p>
+                <p className="font-semibold text-foreground">
+                  On Desktop (Chrome / Edge / Windows / Mac):
+                </p>
                 <ol className="list-decimal list-inside space-y-1.5 text-xs leading-relaxed">
-                  <li>Click the <strong>Install</strong> icon in the address bar (on the right).</li>
-                  <li>Or click the browser menu (<strong>⋮</strong>) → <strong>Save and share</strong> → <strong>Install Master Presenter</strong>.</li>
+                  <li>
+                    Click the <strong>Install</strong> icon in the address bar (on the right).
+                  </li>
+                  <li>
+                    Or click the browser menu (<strong>⋮</strong>) → <strong>Save and share</strong>{" "}
+                    → <strong>Install Master Presenter</strong>.
+                  </li>
                 </ol>
               </div>
             )}
           </div>
           <div className="mt-4 flex justify-end">
-            <Button variant="outline" onClick={() => setInstructionModalOpen(false)} className="rounded-full px-6">
+            <Button
+              variant="outline"
+              onClick={() => setInstructionModalOpen(false)}
+              className="rounded-full px-6"
+            >
               Close
             </Button>
           </div>
@@ -264,8 +295,8 @@ function Hero({
             Present with your <span className="text-gradient">hands</span>, not a clicker
           </h1>
           <p className="animate-rise mx-auto mt-5 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
-            Upload your own presentation and move through it with a wave. Your slides keep their exact
-            design, and your fingertip becomes a live laser pointer.
+            Upload your own presentation and move through it with a wave. Your slides keep their
+            exact design, and your fingertip becomes a live laser pointer.
           </p>
           <div className="animate-rise mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Button asChild size="lg" className="w-full rounded-full px-7 sm:w-auto">
@@ -284,7 +315,12 @@ function Hero({
                 <Download className="mr-1.5 h-4 w-4" /> Free Download
               </Button>
             ) : (
-              <Button asChild size="lg" variant="outline" className="w-full rounded-full px-7 sm:w-auto">
+              <Button
+                asChild
+                size="lg"
+                variant="outline"
+                className="w-full rounded-full px-7 sm:w-auto"
+              >
                 <a href="#gestures">See the gestures</a>
               </Button>
             )}
@@ -346,19 +382,15 @@ function Marquee() {
   );
 }
 
-function SectionHead({
-  eyebrow,
-  title,
-  copy,
-}: {
-  eyebrow: string;
-  title: string;
-  copy?: string;
-}) {
+function SectionHead({ eyebrow, title, copy }: { eyebrow: string; title: string; copy?: string }) {
   return (
     <div className="mx-auto max-w-2xl text-center">
-      <span className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">{eyebrow}</span>
-      <h2 className="mt-3 font-display text-3xl font-semibold tracking-tight text-ink sm:text-4xl">{title}</h2>
+      <span className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
+        {eyebrow}
+      </span>
+      <h2 className="mt-3 font-display text-3xl font-semibold tracking-tight text-ink sm:text-4xl">
+        {title}
+      </h2>
       {copy && <p className="mt-4 text-[15px] leading-relaxed text-muted-foreground">{copy}</p>}
     </div>
   );
@@ -486,8 +518,8 @@ function WhyUs() {
             Stay with your audience, not with your laptop
           </h2>
           <p className="mt-4 text-[15px] leading-relaxed text-muted-foreground">
-            Walking back to press a key breaks the moment. A single hand movement keeps you where you belong
-            — in front of the room, facing the people you are speaking to.
+            Walking back to press a key breaks the moment. A single hand movement keeps you where
+            you belong — in front of the room, facing the people you are speaking to.
           </p>
           <ul className="mt-8 space-y-3">
             {points.map((p) => (
@@ -509,13 +541,19 @@ function WhyUs() {
         <div className="card-premium overflow-hidden p-0">
           <div className="border-b border-border px-6 py-4">
             <p className="font-display text-sm font-semibold">Live gesture feed</p>
-            <p className="text-xs text-muted-foreground">A quick look at what the presenter view shows</p>
+            <p className="text-xs text-muted-foreground">
+              A quick look at what the presenter view shows
+            </p>
           </div>
           <div className="space-y-3 p-6">
             {[
               { label: "Front palm detected", value: "Next slide", tone: "bg-primary" },
               { label: "Back of hand detected", value: "Previous slide", tone: "bg-primary/70" },
-              { label: "Index finger raised", value: "Laser pointer active", tone: "bg-[oklch(0.62_0.24_25)]" },
+              {
+                label: "Index finger raised",
+                value: "Laser pointer active",
+                tone: "bg-[oklch(0.62_0.24_25)]",
+              },
             ].map((row) => (
               <div
                 key={row.label}
@@ -533,7 +571,8 @@ function WhyUs() {
                 <Zap className="h-4 w-4 text-primary" /> Smooth by design
               </p>
               <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-                Motion is stabilised so the laser glides instead of shaking, without adding noticeable delay.
+                Motion is stabilised so the laser glides instead of shaking, without adding
+                noticeable delay.
               </p>
             </div>
           </div>
@@ -620,10 +659,10 @@ function Pricing() {
     {
       name: "Master Voice",
       price: "$0",
-      note: "",
-      freeLabel: "Free",
+      note: "/ month",
+      freeLabel: "",
       copy: "Hands + Voice presentation control.",
-      cta: "Upgrade to Master Voice",
+      cta: "Start presenting free",
       link: "/present" as const,
       search: { plan: "Master Voice", pro: true } as Record<string, unknown>,
       badge: "MOST POPULAR",
@@ -632,25 +671,27 @@ function Pricing() {
       trialNote: "Unlimited",
       features: [
         "Everything in Master Hand",
-        "Voice slide navigation",
-        "Voice → specific slide",
-        "“Next”",
-        "“Previous”",
-        "Number / number words → specific slide",
-        "“Go to Slide 8”",
-        "Advanced laser controls",
-        "Gesture sensitivity controls",
-        "Presentation session history",
-        "Advanced presenter controls",
+        "Front palm → Next",
+        "Back of hand → Previous",
+        "Close hand → Reset",
+        "Index finger → Laser Pointer",
+        "Full-slide laser movement",
+        "“next” → Next slide",
+        "“previous” → Previous slide",
+        "“8” → Slide 8 · “15” → Slide 15",
+        "Spoken number words → corresponding slide",
+        "Continuous browser voice recognition",
+        "Microphone status indicator",
+        "Works together with hand control",
       ],
     },
     {
       name: "Master Write",
       price: "$0",
-      note: "",
-      freeLabel: "Free",
+      note: "/ month",
+      freeLabel: "",
       copy: "Hands + Voice + Writing presentation control.",
-      cta: "Upgrade to Master Write",
+      cta: "Start presenting free",
       link: "/present" as const,
       search: { plan: "Master Write", pro: true } as Record<string, unknown>,
       badge: "POWERED BY LIGHTNING AI",
@@ -673,10 +714,10 @@ function Pricing() {
     {
       name: "Master AI",
       price: "$0",
-      note: "",
-      freeLabel: "Free",
+      note: "/ month",
+      freeLabel: "",
       copy: "Hands + Voice + Writing + AI presentation control.",
-      cta: "Upgrade to Master AI",
+      cta: "Start presenting free",
       link: "/present" as const,
       search: { plan: "Master AI", pro: true } as Record<string, unknown>,
       badge: null,
@@ -736,15 +777,21 @@ function Pricing() {
               <div className="flex items-center justify-between">
                 <h3 className="font-display text-lg font-semibold">{t.name}</h3>
                 {t.badge && (
-                  <span className={`rounded-full px-3 py-1 text-[10px] sm:text-[11px] font-medium tracking-wide ${t.name === 'Master Write' ? 'bg-indigo-500/10 text-indigo-500 border border-indigo-500/20' : 'bg-primary text-primary-foreground'}`}>
+                  <span
+                    className={`rounded-full px-3 py-1 text-[10px] sm:text-[11px] font-medium tracking-wide ${t.name === "Master Write" ? "bg-indigo-500/10 text-indigo-500 border border-indigo-500/20" : "bg-primary text-primary-foreground"}`}
+                  >
                     {t.badge}
                   </span>
                 )}
               </div>
               <p className="mt-4 flex items-end gap-1.5 flex-wrap">
-                <span className="font-display text-4xl font-semibold tracking-tight">{t.price}</span>
+                <span className="font-display text-4xl font-semibold tracking-tight">
+                  {t.price}
+                </span>
                 {(t as any).freeLabel && (
-                  <span className="pb-1 text-sm font-semibold text-primary">{(t as any).freeLabel}</span>
+                  <span className="pb-1 text-sm font-semibold text-primary">
+                    {(t as any).freeLabel}
+                  </span>
                 )}
                 {t.note && <span className="pb-1 text-xs text-muted-foreground">{t.note}</span>}
               </p>
@@ -756,15 +803,56 @@ function Pricing() {
               {t.hasVoiceHighlight && (
                 <div className="relative mt-5 overflow-hidden rounded-xl border border-primary/20 bg-primary/5 p-4">
                   <div className="absolute right-0 top-0 p-2 opacity-10">
-                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" x2="12" y1="19" y2="22"></line></svg>
+                    <svg
+                      width="40"
+                      height="40"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
+                      <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                      <line x1="12" x2="12" y1="19" y2="22"></line>
+                    </svg>
                   </div>
-                  <h4 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-primary"><Mic className="h-4 w-4"/> VOICE CONTROL</h4>
-                  <p className="mb-1 text-sm font-medium italic text-foreground">“Go to Slide 9”</p>
-                  <p className="mb-3 flex items-center gap-1.5 text-xs text-muted-foreground"><ArrowRight className="h-3 w-3"/> Instantly jump to Slide 9</p>
+                  <h4 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-primary">
+                    <Mic className="h-4 w-4" /> VOICE CONTROL
+                  </h4>
+                  <p className="mb-1 text-sm font-medium italic text-foreground">“8”</p>
+                  <p className="mb-3 flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <ArrowRight className="h-3 w-3" /> Instantly jump to Slide 8
+                  </p>
                   <div className="mt-2 flex flex-wrap gap-1.5">
-                    <span className="rounded-md border border-border bg-background px-2 py-1 text-[10px]">“Next slide”</span>
-                    <span className="rounded-md border border-border bg-background px-2 py-1 text-[10px]">“Previous slide”</span>
-                    <span className="rounded-md border border-border bg-background px-2 py-1 text-[10px]">“Go to Slide 15”</span>
+                    <span className="rounded-md border border-border bg-background px-2 py-1 text-[10px]">
+                      “next”
+                    </span>
+                    <span className="rounded-md border border-border bg-background px-2 py-1 text-[10px]">
+                      “previous”
+                    </span>
+                    <span className="rounded-md border border-border bg-background px-2 py-1 text-[10px]">
+                      “8”
+                    </span>
+                    <span className="rounded-md border border-border bg-background px-2 py-1 text-[10px]">
+                      “15”
+                    </span>
+                  </div>
+                  <div className="mt-3 space-y-1 border-t border-border/50 pt-3 text-[11px] text-muted-foreground">
+                    <p className="flex items-center gap-1.5">
+                      <span className="h-2 w-2 shrink-0 rounded-full bg-green-500" /> Green → voice
+                      detected
+                    </p>
+                    <p className="flex items-center gap-1.5">
+                      <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" /> Yellow →
+                      listening / ready
+                    </p>
+                    <p className="flex items-center gap-1.5">
+                      <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" /> Red → mic off /
+                      unavailable / error
+                    </p>
                   </div>
                 </div>
               )}
@@ -774,9 +862,13 @@ function Pricing() {
                 variant={t.highlight ? "default" : "outline"}
                 className="mt-6 w-full rounded-full"
               >
-                <Link to={t.link} search={t.search}>{t.cta}</Link>
+                <Link to={t.link} search={t.search}>
+                  {t.cta}
+                </Link>
               </Button>
-              <ul className={`mt-7 flex-grow space-y-2.5 ${t.hasVoiceHighlight ? 'border-t border-border/50 pt-5' : ''}`}>
+              <ul
+                className={`mt-7 flex-grow space-y-2.5 ${t.hasVoiceHighlight ? "border-t border-border/50 pt-5" : ""}`}
+              >
                 {t.features.map((f) => (
                   <li key={f} className="flex items-start gap-2.5 text-[13px] leading-relaxed">
                     <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
@@ -826,7 +918,9 @@ function Faq() {
         <Accordion type="single" collapsible className="mt-10">
           {faqs.map((f) => (
             <AccordionItem key={f.q} value={f.q}>
-              <AccordionTrigger className="text-left font-display text-[15px]">{f.q}</AccordionTrigger>
+              <AccordionTrigger className="text-left font-display text-[15px]">
+                {f.q}
+              </AccordionTrigger>
               <AccordionContent className="text-sm leading-relaxed text-muted-foreground">
                 {f.a}
               </AccordionContent>
