@@ -145,9 +145,21 @@ function resolveCommand(raw: string, allowExtended: boolean): ResolvedCommand | 
   if (lower === "previous") return { kind: "prev" };
 
   // Whole utterance is a number: "8", "eight". NOT "slide 8" / "go to 6".
+  // Chrome sometimes recognises a lone spoken digit with a trailing word
+  // fragment attached; allow only harmless punctuation around the number —
+  // never extra words.
   const bare = lower.match(new RegExp(`^(\\d{1,2}|${NUM_WORDS})$`));
   if (bare?.[1]) {
     const n = toNumber(bare[1]);
+    if (n != null) return { kind: "slide", n };
+  }
+
+  // Same shape with punctuation already collapsed to spaces: "5 .", "5 ,".
+  // Note the alternation precedence: only the digit branch may carry the
+  // trailing punctuation, so a number word followed by junk still fails.
+  const spaced = lower.match(new RegExp(`^([\\d']{1,2}(?:\\s?[.,;:])?|${NUM_WORDS})$`));
+  if (spaced?.[1]) {
+    const n = toNumber(spaced[1].replace(/[^\d\w]/g, ""));
     if (n != null) return { kind: "slide", n };
   }
 
@@ -286,10 +298,17 @@ export function useVoiceControl({
 
       let cmd = resolveCommand(text, extendedRef.current);
 
-      // Strict gate: exact commands (next / previous / bare numbers) only run
-      // when the engine is confident. Weak-hearing misfires are worse than a
-      // missed command during a talk.
-      if (cmd && !confident) cmd = null;
+      // Confidence gate applies only to the word commands ("next" /
+      // "previous") and the extended-plan phrasings. Chrome's Web Speech API
+      // routinely reports 0 or near-0 confidence for short single-word final
+      // results — spoken numbers would be silently discarded here, so they
+      // are validated by the strict whole-utterance parse instead: a bare
+      // "5" is unambiguous, while ordinary speech ("I have five points")
+      // still resolves to nothing.
+      const isBareNumber =
+        (cmd?.kind === "slide" && !extendedRef.current) ||
+        (cmd?.kind === "slide" && /^[\d\s.,!?;:'’“”-]+$/.test(normalise(text)));
+      if (cmd && !confident && !isBareNumber) cmd = null;
 
       // Only if the primary transcript resolved nothing do we try the engine's
       // alternatives — they face the same confidence gate.
