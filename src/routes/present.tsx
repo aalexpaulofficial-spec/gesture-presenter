@@ -547,7 +547,7 @@ function PresentPage() {
 
   const handleGoToSlideByText = useCallback(
     (text: string) => {
-      if (!metadata) return;
+      if (!metadata) return false;
       const lowerText = text.toLowerCase();
 
       const matchingSlideIndex = metadata.findIndex((slide: any) => {
@@ -560,7 +560,10 @@ function PresentPage() {
 
       if (matchingSlideIndex !== -1) {
         setIndex(matchingSlideIndex);
+        return true;
       }
+      // No slide carries that text: report the miss instead of claiming success.
+      return false;
     },
     [metadata],
   );
@@ -575,9 +578,13 @@ function PresentPage() {
     onNext: () => go(1),
     onPrev: () => go(-1),
     onGoToSlide: (slide: number) => {
+      // The uploaded deck is the only source of truth for the slide count, and
+      // it is not known until DeckStage reports it. Until then, and for any
+      // number past the last slide, do nothing at all.
       const total = slideCountRef.current || slideCount;
-      const max = Math.max(0, total - 1);
-      if (slide < 0 || (total > 0 && slide > max)) return false;
+      if (total <= 0) return false;
+      const max = total - 1;
+      if (slide < 0 || slide > max) return false;
       setIndex(slide);
       return true;
     },
