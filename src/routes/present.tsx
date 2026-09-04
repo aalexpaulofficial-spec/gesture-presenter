@@ -296,14 +296,7 @@ function PresentPage() {
     [metadata],
   );
 
-  const {
-    micOn,
-    setMicOn,
-    micState,
-    transcript,
-    status: voiceStatus,
-    supported,
-  } = useVoiceControl({
+  const { micState, status: voiceStatus, supported } = useVoiceControl({
     enabled: isPro && (phase === "preview" || phase === "ready"),
     // Master Voice keeps the strict command set: "next" / "previous" / NUMBER.
     // Master Write / Master AI additionally use highlight + "go to … slide".
@@ -322,36 +315,34 @@ function PresentPage() {
     onGoToSlideByText: handleGoToSlideByText,
   });
 
-  // Chip label for the fine-grained voice status (the colour itself is micState).
-  let statusLabel = "Mic Off";
-  if (supported && micOn) {
+  // Compact status label — the colour itself is micState. The microphone
+  // starts automatically after permission; there is no manual mic toggle.
+  let statusLabel = "Voice unavailable";
+  if (supported) {
     switch (voiceStatus) {
       case "starting":
-        statusLabel = "Starting mic…";
+        statusLabel = "Voice starting…";
         break;
       case "listening":
-        statusLabel = "Listening — say “next”, “previous” or a slide number";
-        break;
-      case "recognizing":
-        statusLabel = "Voice detected";
+        statusLabel = "Listening";
         break;
       case "executed":
         statusLabel = "Command executed";
-        break;
-      case "not_recognized":
-        statusLabel = "Command not recognized";
         break;
       case "slide_not_found":
         statusLabel = "Slide not found";
         break;
       case "permission_denied":
-        statusLabel = "Permission denied";
+        statusLabel = "Mic permission denied";
         break;
       case "error":
-        statusLabel = "Mic error — retrying…";
+        statusLabel = "Voice error — retrying…";
+        break;
+      case "off":
+        statusLabel = "Voice starting…";
         break;
       default:
-        statusLabel = "Listening…";
+        statusLabel = "Listening";
     }
   }
 
@@ -500,57 +491,28 @@ function PresentPage() {
                       Voice not supported in this browser
                     </div>
                   ) : (
-                    <div className="flex flex-col gap-1 items-start justify-center">
-                      <div className="flex items-center gap-2">
-                        {/* Mic ON/OFF — switching is completely silent and
-                            actually stops/starts speech recognition. */}
-                        <Button
-                          size="sm"
-                          variant={micOn ? "secondary" : "outline"}
-                          onClick={() => setMicOn(!micOn)}
-                          className="h-8 rounded-full px-3"
-                          aria-pressed={micOn}
-                        >
-                          {micOn ? (
-                            <Mic className="mr-1 h-3.5 w-3.5" />
-                          ) : (
-                            <MicOff className="mr-1 h-3.5 w-3.5" />
-                          )}
-                          {micOn ? "Mic On" : "Mic Off"}
-                        </Button>
-                        {/* GREEN = voice detected · YELLOW = listening/ready ·
-                            RED = mic off / error / unavailable */}
-                        <div
-                          className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium border transition-colors ${
-                            micState === "green"
-                              ? "border-green-500/60 bg-green-500/10 text-green-600"
-                              : micState === "yellow"
-                                ? "border-amber-500/60 bg-amber-500/10 text-amber-600"
-                                : "border-destructive/50 bg-destructive/10 text-destructive"
-                          }`}
-                        >
-                          <span
-                            className={`h-2.5 w-2.5 rounded-full transition-colors ${
-                              micState === "green"
-                                ? "bg-green-500"
-                                : micState === "yellow"
-                                  ? "bg-amber-500"
-                                  : "bg-red-500"
-                            }`}
-                          />
-                          {micOn ? (
-                            <Mic className="h-3.5 w-3.5" />
-                          ) : (
-                            <MicOff className="h-3.5 w-3.5" />
-                          )}
-                          {statusLabel}
-                        </div>
-                      </div>
-                      {transcript && (
-                        <div className="text-xs text-muted-foreground italic px-2 max-w-[200px] truncate">
-                          "{transcript}"
-                        </div>
-                      )}
+                    // Compact, visual-only status indicator. The microphone
+                    // starts automatically after permission is granted — this
+                    // is NOT a manual mic on/off toggle.
+                    <div
+                      className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium border transition-colors ${
+                        micState === "green"
+                          ? "border-green-500/60 bg-green-500/10 text-green-600"
+                          : micState === "yellow"
+                            ? "border-amber-500/60 bg-amber-500/10 text-amber-600"
+                            : "border-destructive/50 bg-destructive/10 text-destructive"
+                      }`}
+                    >
+                      <span
+                        className={`h-2 w-2 rounded-full transition-colors ${
+                          micState === "green"
+                            ? "bg-green-500"
+                            : micState === "yellow"
+                              ? "bg-amber-500"
+                              : "bg-red-500"
+                        }`}
+                      />
+                      {statusLabel}
                     </div>
                   )}
                 </div>
@@ -643,10 +605,10 @@ function HowToControl({ isPro }: { isPro: boolean }) {
               ))}
             </ul>
             <p className="mt-3 rounded-lg bg-primary-soft/50 px-3 py-2 text-xs text-muted-foreground">
-              Turn the mic on with the “Mic On” button. The status dot shows green while you speak,
-              yellow while listening, red when the mic is off or unavailable. The microphone listens
-              continuously alongside the camera. Normal presentation speech is ignored — only these
-              commands run, and they change slides silently with no sounds or spoken responses.
+              The microphone starts automatically once you allow mic permission — no button needed.
+              The status dot shows green when a command is detected, yellow while listening, red when
+              voice is unavailable. Normal presentation speech is ignored — only these exact commands
+              run, and they change slides silently with no sounds or spoken responses.
             </p>
           </div>
         )}

@@ -8,24 +8,22 @@ export type VoiceHighlight = {
 };
 
 /**
- * The coarse three-state microphone indicator shown to the presenter:
- *   green  → mic active and voice detected (the user is speaking)
- *   yellow → mic on, listening and ready, waiting for speech
- *   red    → mic off, permission denied, error, or unsupported browser
+ * The compact three-state voice indicator shown to the presenter:
+ *   green  → a supported command was actually executed
+ *   yellow → listening / ready / initializing
+ *   red    → permission denied, unsupported browser, or recognition error
  */
 export type MicState = "green" | "yellow" | "red";
 
 /**
  * Fine-grained recognition status. `micState` collapses this into the
- * green/yellow/red indicator; the UI shows this as the chip's text label.
+ * green/yellow/red indicator; the UI shows it as the chip's text label.
  */
 export type VoiceStatus =
   | "off"
   | "starting"
   | "listening"
-  | "recognizing"
   | "executed"
-  | "not_recognized"
   | "slide_not_found"
   | "permission_denied"
   | "unsupported"
@@ -53,7 +51,8 @@ type UseVoiceControlProps = {
 /**
  * Canonical spoken number words. Deliberately conservative: homophones like
  * "to"/"too"/"for"/"ate"/"won" are normal presentation words, so folding them
- * onto slide numbers would navigate on ordinary speech.
+ * onto slide numbers would navigate on ordinary speech. "Sixteen"/"seventeen"
+ * etc. are safe to keep — they are unambiguous numbers, never ordinary words.
  */
 const WORDS_TO_NUM: Record<string, number> = {
   one: 1,
@@ -102,7 +101,7 @@ type ResolvedCommand =
   | { kind: "clearHighlights" }
   | { kind: "slideByText"; text: string };
 
-/** Lowercase, strip punctuation and collapse whitespace. */
+/** Lowercase, strip harmless punctuation and collapse whitespace. */
 function normalise(input: string): string {
   return input
     .toLowerCase()
@@ -112,15 +111,16 @@ function normalise(input: string): string {
 }
 
 /**
- * Speech-tolerance: fold common mis-recognitions into canonical wording.
- * Only single-word folds toward the two command words are safe — a fold that
- * maps unrelated words onto "next"/"previous" would create false triggers.
- * Kept deliberately conservative for long-range (noisy) recognition.
+ * Speech-tolerance: fold common long-range mis-recognitions into canonical
+ * wording. Only single-word folds toward the two command words are safe — a
+ * fold that maps unrelated words onto "next"/"previous" would create false
+ * triggers. Deliberately conservative. Word-boundary matching means
+ * "next-generation" and "previously" can never fold or match.
  */
 function canonicalise(text: string): string {
   return text
-    .replace(/\b(nekst|nex|nexts)\b/g, "next")
-    .replace(/\b(prev|prevs|prevous|previus)\b/g, "previous")
+    .replace(/\b(nekst|nexts)\b/g, "next")
+    .replace(/\b(prevs|prevous|previus)\b/g, "previous")
     .replace(/\b(slides|slid)\b/g, "slide")
     .replace(/\b(hilight|highlite|high light|highlights?)\b/g, "highlight")
     .replace(/\b(clean|cleared|clears)\b/g, "clear")
@@ -130,11 +130,11 @@ function canonicalise(text: string): string {
 }
 
 /**
- * STRICT command resolution. The WHOLE utterance must resolve to a command —
- * a sentence that merely contains the word "next" (or a number) never
- * triggers anything. With `allowExtended` false (Master Voice) the only
- * supported commands are exactly: "next", "previous", and a bare number or
- * number word (optionally prefixed by "slide").
+ * STRICT command resolution. The WHOLE utterance must be exactly the command —
+ * any extra words ("next slide", "please next", "go to 6", "I said next")
+ * return null and nothing happens. With `allowExtended` false (Master Voice)
+ * the only supported commands are exactly: "next", "previous", and a bare
+ * number / number word.
  */
 function resolveCommand(raw: string, allowExtended: boolean): ResolvedCommand | null {
   const lower = canonicalise(normalise(raw));
@@ -144,8 +144,8 @@ function resolveCommand(raw: string, allowExtended: boolean): ResolvedCommand | 
   if (lower === "next") return { kind: "next" };
   if (lower === "previous") return { kind: "prev" };
 
-  // Whole utterance is a number: "8", "eight", "slide 8", "slide number 8".
-  const bare = lower.match(new RegExp(`^(?:slide |slide number )?(\\d{1,3}|${NUM_WORDS})$`));
+  // Whole utterance is a number: "8", "eight". NOT "slide 8" / "go to 6".
+  const bare = lower.match(new RegExp(`^(\\d{1,2}|${NUM_WORDS})$`));
   if (bare?.[1]) {
     const n = toNumber(bare[1]);
     if (n != null) return { kind: "slide", n };
@@ -153,10 +153,10 @@ function resolveCommand(raw: string, allowExtended: boolean): ResolvedCommand | 
 
   if (!allowExtended) return null;
 
-  // "go to slide 8" / "jump to slide 8" — anchored, extended plans only.
+  // Extended plans only: "slide 8" / "slide number 8" / "go to slide 8".
   const numbered = lower.match(
     new RegExp(
-      `^(?:go|jump|move|show|open)\\s+(?:to\\s+)?(?:the\\s+)?slide\\s*(?:number\\s*)?(\\d{1,3}|${NUM_WORDS})$`,
+      `^(?:go|jump|move|show|open)?\\s*(?:to\\s+)?(?:the\\s+)?slide\\s*(?:number\\s*)?(\\d{1,3}|${NUM_WORDS})$`,
     ),
   );
   if (numbered?.[1]) {
@@ -199,20 +199,17 @@ function resolveCommand(raw: string, allowExtended: boolean): ResolvedCommand | 
   return null;
 }
 
-function micStateFor(status: VoiceStatus, supported: boolean, micOn: boolean): MicState {
-  if (!supported || !micOn) return "red";
+function micStateFor(status: VoiceStatus, supported: boolean): MicState {
   switch (status) {
-    // Speech has been detected (a command ran, or speech that was not a command).
-    case "recognizing":
+    // A supported command was actually executed → GREEN.
     case "executed":
-    case "not_recognized":
     case "slide_not_found":
       return "green";
-    // Mic is on and waiting for speech.
+    // Listening / ready / initializing → YELLOW.
     case "starting":
     case "listening":
       return "yellow";
-    // Mic off, unavailable, denied or failed.
+    // Unavailable, denied, failed, or not yet started → RED.
     case "off":
     case "permission_denied":
     case "unsupported":
@@ -234,16 +231,12 @@ export function useVoiceControl({
   onGoToSlideByText,
 }: UseVoiceControlProps) {
   const [supported, setSupported] = useState(false);
-  const [micOn, setMicOn] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [transcript, setTranscript] = useState("");
   const [status, setStatus] = useState<VoiceStatus>("off");
 
   const recognitionRef = useRef<any>(null);
   const enabledRef = useRef(enabled);
   enabledRef.current = enabled;
-  const micOnRef = useRef(micOn);
-  micOnRef.current = micOn;
   const extendedRef = useRef(extendedCommands);
   extendedRef.current = extendedCommands;
   const thresholdRef = useRef(confidenceThreshold);
@@ -280,12 +273,13 @@ export function useVoiceControl({
     setSupported(Boolean(Ctor));
   }, []);
 
-  /** Resolve + gate + execute one final utterance. Returns the outcome. */
+  /**
+   * Resolve + gate + execute one FINAL utterance. Only final results reach
+   * this function — interim/partial phrases never execute commands.
+   */
   const runCommand = useCallback(
     (text: string, confidence: number, alternatives: string[]): boolean | "slide_not_found" => {
-      // The mic may have been switched off between result and execution —
-      // a switched-off mic must never trigger a slide action.
-      if (!micOnRef.current || !enabledRef.current || stoppingRef.current) return false;
+      if (!enabledRef.current || stoppingRef.current) return false;
 
       const cb = callbacksRef.current;
       const confident = !(confidence > 0 && confidence < thresholdRef.current);
@@ -350,10 +344,8 @@ export function useVoiceControl({
       return;
     }
 
-    // MIC OFF (or plan/phase disabled): actually stop the engine and drop
-    // every handler, so nothing can fire after the mic is switched off.
-    // No sounds are played anywhere — mic on/off is completely silent.
-    if (!enabled || !micOn) {
+    // Disabled (wrong plan/phase): stop the engine and drop every handler.
+    if (!enabled) {
       stoppingRef.current = true;
       const rec = recognitionRef.current;
       if (rec) {
@@ -371,44 +363,38 @@ export function useVoiceControl({
       recognitionRef.current = null;
       setIsListening(false);
       setStatus("off");
-      setTranscript("");
       return;
     }
 
+    // Microphone starts AUTOMATICALLY when the plan is active — no manual
+    // toggle. Permission is requested once, here; a denial surfaces as RED.
     stoppingRef.current = false;
     let restartTimer: number | null = null;
     let watchdog: number | null = null;
-    let speechIdleTimer: number | null = null;
+    let settledTimer: number | null = null;
     let lastActivity = Date.now();
     let disposed = false;
 
     const Ctor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     const recognition = new Ctor();
     // Continuous + interim keeps recognition responsive while the presenter
-    // stands away from the device.
+    // stands away from the device. Only FINAL results execute commands.
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = "en-US";
     recognition.maxAlternatives = 3;
     recognitionRef.current = recognition;
 
-    // Return the chip to YELLOW ("listening") after speech has stopped.
+    // Return the chip to YELLOW ("listening") shortly after a command runs.
     const settleToYellow = () => {
-      if (speechIdleTimer) window.clearTimeout(speechIdleTimer);
-      speechIdleTimer = window.setTimeout(() => {
-        if (enabledRef.current && micOnRef.current && !stoppingRef.current) {
-          setStatus("listening");
-        }
+      if (settledTimer) window.clearTimeout(settledTimer);
+      settledTimer = window.setTimeout(() => {
+        if (enabledRef.current && !stoppingRef.current) setStatus("listening");
       }, 1400);
     };
 
-    const flashGreen = (next: VoiceStatus) => {
-      setStatus(next);
-      settleToYellow();
-    };
-
     const safeStart = () => {
-      if (stoppingRef.current || !enabledRef.current || !micOnRef.current) return;
+      if (stoppingRef.current || !enabledRef.current) return;
       try {
         recognition.start();
       } catch {
@@ -416,9 +402,10 @@ export function useVoiceControl({
       }
     };
 
-    // Ask for the microphone up-front so a denial surfaces immediately as
-    // "Permission denied" instead of a silent recognition failure later.
-    // The track is stopped right away — the CameraWindow keeps its own stream.
+    // Ask for the microphone up-front so a denial surfaces immediately as RED
+    // instead of a silent recognition failure later. The track is stopped
+    // right away — the CameraWindow keeps its own stream. Recognition itself
+    // re-uses the granted permission; permission is never re-requested.
     let permissionCheck: Promise<void> | null = null;
     if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
       permissionCheck = navigator.mediaDevices
@@ -447,7 +434,6 @@ export function useVoiceControl({
 
     recognition.onresult = (event: any) => {
       lastActivity = Date.now();
-      let interim = "";
       const finals: Array<{ text: string; confidence: number; alternatives: string[] }> = [];
 
       for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -467,19 +453,9 @@ export function useVoiceControl({
                 : 1,
             alternatives: alt,
           });
-        } else {
-          interim += result[0]?.transcript ?? "";
         }
-      }
-
-      const speech = finals.map((f) => f.text).join(" ") || interim;
-      if (speech) {
-        setTranscript(speech.trim());
-        if (!finals.length) {
-          // The user is speaking right now → GREEN, in real time.
-          setStatus("recognizing");
-          settleToYellow();
-        }
+        // Interim/partial phrases are intentionally ignored — they never
+        // execute commands and never change the status indicator.
       }
 
       if (!finals.length) return;
@@ -487,10 +463,16 @@ export function useVoiceControl({
       for (const { text, confidence, alternatives } of finals) {
         if (!text.trim()) continue;
         const outcome = runCommand(text, confidence, alternatives);
-        if (outcome === "slide_not_found") flashGreen("slide_not_found");
-        else if (outcome) flashGreen("executed");
-        else if (confidence >= thresholdRef.current) flashGreen("not_recognized");
-        else settleToYellow();
+        // GREEN only when a supported command actually ran. Ordinary speech
+        // ("Hello everyone", "This is the next topic") never flashes green.
+        if (outcome === "slide_not_found") {
+          setStatus("slide_not_found");
+          settleToYellow();
+        } else if (outcome) {
+          setStatus("executed");
+          settleToYellow();
+        }
+        // Non-command speech → status stays YELLOW. Silent, by design.
       }
     };
 
@@ -503,20 +485,20 @@ export function useVoiceControl({
         stoppingRef.current = true;
         return;
       }
-      // network / audio-capture etc. → retry shortly
+      // network / audio-capture etc. → retry shortly, back to yellow
       setStatus("error");
       restartTimer = window.setTimeout(safeStart, 1200);
     };
 
     recognition.onend = () => {
       setIsListening(false);
-      if (stoppingRef.current || !enabledRef.current || !micOnRef.current) return;
+      if (stoppingRef.current || !enabledRef.current) return;
       // Automatic restart keeps listening continuous across browser timeouts.
       restartTimer = window.setTimeout(safeStart, 300);
     };
 
     void permissionCheck?.then(() => {
-      if (!disposed && enabledRef.current && micOnRef.current && !stoppingRef.current) {
+      if (!disposed && enabledRef.current && !stoppingRef.current) {
         setStatus("starting");
         safeStart();
       }
@@ -524,7 +506,7 @@ export function useVoiceControl({
 
     // Watchdog: some browsers silently stop delivering audio events.
     watchdog = window.setInterval(() => {
-      if (!enabledRef.current || !micOnRef.current || stoppingRef.current) return;
+      if (!enabledRef.current || stoppingRef.current) return;
       if (Date.now() - lastActivity > 12000) {
         lastActivity = Date.now();
         try {
@@ -540,7 +522,7 @@ export function useVoiceControl({
       stoppingRef.current = true;
       if (restartTimer) window.clearTimeout(restartTimer);
       if (watchdog) window.clearInterval(watchdog);
-      if (speechIdleTimer) window.clearTimeout(speechIdleTimer);
+      if (settledTimer) window.clearTimeout(settledTimer);
       try {
         recognition.onstart = null;
         recognition.onaudiostart = null;
@@ -553,9 +535,9 @@ export function useVoiceControl({
       }
       recognitionRef.current = null;
     };
-  }, [enabled, supported, micOn, runCommand]);
+  }, [enabled, supported, runCommand]);
 
-  const micState = micStateFor(status, supported, micOn);
+  const micState = micStateFor(status, supported);
 
-  return { supported, micOn, setMicOn, micState, isListening, transcript, status };
+  return { supported, micState, isListening, status };
 }
