@@ -39,7 +39,10 @@ export async function extractSlideText(buffer: ArrayBuffer): Promise<SlideText[]
   const presFile = zip.file("ppt/presentation.xml");
   if (presFile) {
     const doc = parser.parseFromString(await presFile.async("string"), "application/xml");
-    const sz = doc.getElementsByTagName("p:sldSz")[0];
+    const sz =
+      doc.getElementsByTagName("p:sldSz")[0] ||
+      (doc.getElementsByTagNameNS ? doc.getElementsByTagNameNS("*", "sldSz")[0] : null) ||
+      doc.getElementsByTagName("sldSz")[0];
     if (sz) {
       slideW = num(sz.getAttribute("cx")) || slideW;
       slideH = num(sz.getAttribute("cy")) || slideH;
@@ -56,18 +59,38 @@ export async function extractSlideText(buffer: ArrayBuffer): Promise<SlideText[]
     const path = paths[i]!;
     const xml = await zip.file(path)!.async("string");
     const doc = parser.parseFromString(xml, "application/xml");
-    const shapes = Array.from(doc.getElementsByTagName("p:sp"));
+
+    const getTags = (root: Element | Document, tag: string): Element[] => {
+      const pTag = `p:${tag}`;
+      const aTag = `a:${tag}`;
+      const list: Element[] = [];
+      if (root.getElementsByTagNameNS) {
+        list.push(...Array.from(root.getElementsByTagNameNS("*", tag)));
+      }
+      list.push(...Array.from(root.getElementsByTagName(pTag)));
+      list.push(...Array.from(root.getElementsByTagName(aTag)));
+      list.push(...Array.from(root.getElementsByTagName(tag)));
+      return Array.from(new Set(list));
+    };
+
+    const spShapes = getTags(doc, "sp");
+    const gfShapes = getTags(doc, "graphicFrame");
+    const allShapes = Array.from(new Set([...spShapes, ...gfShapes]));
+
     const elements: SlideTextElement[] = [];
 
-    for (const sp of shapes) {
-      const texts = Array.from(sp.getElementsByTagName("a:t"))
+    for (const sp of allShapes) {
+      const textNodes = getTags(sp, "t");
+      const texts = textNodes
         .map((t) => t.textContent || "")
         .join("")
         .trim();
       if (!texts) continue;
 
-      const off = sp.getElementsByTagName("a:off")[0];
-      const ext = sp.getElementsByTagName("a:ext")[0];
+      const offList = getTags(sp, "off");
+      const extList = getTags(sp, "ext");
+      const off = offList[0];
+      const ext = extList[0];
       const x = num(off?.getAttribute("x"));
       const y = num(off?.getAttribute("y"));
       const cx = num(ext?.getAttribute("cx"));
@@ -75,10 +98,10 @@ export async function extractSlideText(buffer: ArrayBuffer): Promise<SlideText[]
 
       elements.push({
         text: texts,
-        left: slideW ? x / slideW : 0,
-        top: slideH ? y / slideH : 0,
-        width: slideW ? cx / slideW : 0,
-        height: slideH ? cy / slideH : 0,
+        left: slideW && cx ? x / slideW : 0,
+        top: slideH && cy ? y / slideH : 0,
+        width: slideW && cx ? cx / slideW : 0,
+        height: slideH && cy ? cy / slideH : 0,
       });
     }
 

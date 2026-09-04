@@ -49,16 +49,17 @@ type UseVoiceControlProps = {
 };
 
 /**
- * Canonical spoken number words. Deliberately conservative: homophones like
- * "to"/"too"/"for"/"ate"/"won" are normal presentation words, so folding them
- * onto slide numbers would navigate on ordinary speech. "Sixteen"/"seventeen"
- * etc. are safe to keep — they are unambiguous numbers, never ordinary words.
+ * Canonical spoken number words and compound numbers up to 100.
+ * Chrome SpeechRecognition transcribes numbers as either digits ("4")
+ * or words ("four").
  */
 const WORDS_TO_NUM: Record<string, number> = {
+  zero: 0,
   one: 1,
   two: 2,
   three: 3,
   four: 4,
+  for: 4, // Chrome speech recognition sometimes transcribes standalone "four" as "for"
   five: 5,
   six: 6,
   seven: 7,
@@ -75,14 +76,47 @@ const WORDS_TO_NUM: Record<string, number> = {
   eighteen: 18,
   nineteen: 19,
   twenty: 20,
+  thirty: 30,
+  forty: 40,
+  fifty: 50,
+  sixty: 60,
+  seventy: 70,
+  eighty: 80,
+  ninety: 90,
+  hundred: 100,
 };
 
-const NUM_WORDS = Object.keys(WORDS_TO_NUM).join("|");
+/**
+ * Parses an utterance that is STRICTLY a number.
+ * Returns null if the utterance contains any other words
+ * (e.g. "today we have four points" -> null, "go to slide 4" -> null).
+ */
+function parseStrictNumber(str: string): number | null {
+  const trimmed = str.trim().toLowerCase();
+  if (!trimmed) return null;
 
-function toNumber(raw: string): number | null {
-  const v = raw.trim().toLowerCase();
-  if (/^\d+$/.test(v)) return parseInt(v, 10);
-  if (v in WORDS_TO_NUM) return WORDS_TO_NUM[v]!;
+  // Pure digits: "4", "5", "8", "15", "100"
+  if (/^\d+$/.test(trimmed)) {
+    const n = parseInt(trimmed, 10);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+
+  // Single word number: "four", "eight", "fifteen", "twenty"
+  if (trimmed in WORDS_TO_NUM) {
+    const n = WORDS_TO_NUM[trimmed]!;
+    return n > 0 ? n : null;
+  }
+
+  // Compound number word: "twenty-one", "twenty one", "thirty five"
+  const parts = trimmed.replace(/-/g, " ").split(/\s+/);
+  if (parts.length === 2) {
+    const tens = WORDS_TO_NUM[parts[0]];
+    const ones = WORDS_TO_NUM[parts[1]];
+    if (tens && tens >= 20 && tens <= 90 && ones && ones >= 1 && ones <= 9) {
+      return tens + ones;
+    }
+  }
+
   return null;
 }
 
@@ -111,103 +145,91 @@ function normalise(input: string): string {
 }
 
 /**
- * Speech-tolerance: fold common long-range mis-recognitions into canonical
- * wording. Only single-word folds toward the two command words are safe — a
- * fold that maps unrelated words onto "next"/"previous" would create false
- * triggers. Deliberately conservative. Word-boundary matching means
- * "next-generation" and "previously" can never fold or match.
+ * Speech-tolerance for core command words: fold common long-range mis-recognitions.
  */
 function canonicalise(text: string): string {
   return text
     .replace(/\b(nekst|nexts)\b/g, "next")
     .replace(/\b(prevs|prevous|previus)\b/g, "previous")
-    .replace(/\b(slides|slid)\b/g, "slide")
     .replace(/\b(hilight|highlite|high light|highlights?)\b/g, "highlight")
     .replace(/\b(clean|cleared|clears)\b/g, "clear")
-    .replace(/\bgoto\b/g, "go to")
     .replace(/\bremoved\b/g, "remove")
     .trim();
 }
 
 /**
- * STRICT command resolution. The WHOLE utterance must be exactly the command —
- * any extra words ("next slide", "please next", "go to 6", "I said next")
- * return null and nothing happens. With `allowExtended` false (Master Voice)
- * the only supported commands are exactly: "next", "previous", and a bare
- * number / number word.
+ * STRICT command resolution.
+ * - Bare "next" -> Next Slide
+ * - Bare "previous" -> Previous Slide
+ * - Strictly numeric command ("4", "5", "8", "four", etc.) -> Slide number
+ * - "Highlight <text>" -> Highlight on current slide
+ * - "Highlight <text> in <color>" -> Colored highlight
+ * - "Remove Highlight <text>" -> Remove highlight
+ * - "Clear Highlights" -> Clear all highlights
+ *
+ * Normal speech ("today we have four points", "India is an important market",
+ * "go to slide 4", "please move to 4") returns null and executes nothing.
  */
-function resolveCommand(raw: string, allowExtended: boolean): ResolvedCommand | null {
+function resolveCommand(raw: string, allowExtended = true): ResolvedCommand | null {
   const lower = canonicalise(normalise(raw));
   if (!lower) return null;
 
-  // Exact navigation: only a bare "next" / "previous".
+  // 1. Exact navigation: bare "next" / "previous" ONLY
   if (lower === "next") return { kind: "next" };
   if (lower === "previous") return { kind: "prev" };
 
-  // Whole utterance is a number: "8", "eight". NOT "slide 8" / "go to 6".
-  // Chrome sometimes recognises a lone spoken digit with a trailing word
-  // fragment attached; allow only harmless punctuation around the number —
-  // never extra words.
-  const bare = lower.match(new RegExp(`^(\\d{1,2}|${NUM_WORDS})$`));
-  if (bare?.[1]) {
-    const n = toNumber(bare[1]);
+  // 2. Direct numeric command: ONLY when utterance is purely a number
+  // E.g. "4", "5", "8", "15", "four", "eight", "fifteen"
+  // Will NOT match "today we have four points", "this is slide four", "go to slide 4"
+  const numericVal = parseStrictNumber(lower);
+  if (numericVal != null) {
+    return { kind: "slide", n: numericVal };
+  }
+
+  // Also check if Chrome delivered with trailing punctuation like "4 ."
+  const strippedPunct = lower.replace(/[^\w\d\s]/g, "").trim();
+  if (strippedPunct !== lower) {
+    const n = parseStrictNumber(strippedPunct);
     if (n != null) return { kind: "slide", n };
   }
 
-  // Same shape with punctuation already collapsed to spaces: "5 .", "5 ,".
-  // Note the alternation precedence: only the digit branch may carry the
-  // trailing punctuation, so a number word followed by junk still fails.
-  const spaced = lower.match(new RegExp(`^([\\d']{1,2}(?:\\s?[.,;:])?|${NUM_WORDS})$`));
-  if (spaced?.[1]) {
-    const n = toNumber(spaced[1].replace(/[^\d\w]/g, ""));
-    if (n != null) return { kind: "slide", n };
-  }
-
-  if (!allowExtended) return null;
-
-  // Extended plans only: "slide 8" / "slide number 8" / "go to slide 8".
-  const numbered = lower.match(
-    new RegExp(
-      `^(?:go|jump|move|show|open)?\\s*(?:to\\s+)?(?:the\\s+)?slide\\s*(?:number\\s*)?(\\d{1,3}|${NUM_WORDS})$`,
-    ),
-  );
-  if (numbered?.[1]) {
-    const n = toNumber(numbered[1]);
-    if (n != null) return { kind: "slide", n };
-  }
-
-  // Clear all highlights.
-  if (/^(?:clear|clear all|remove all|remove every)(?: the)? highlights?$/.test(lower)) {
+  // 3. Clear all highlights: "clear highlights", "clear highlight", "clear all highlights"
+  if (/^(?:clear|clear all|remove all|remove every)\s+highlights?$/.test(lower)) {
     return { kind: "clearHighlights" };
   }
 
-  // Remove a specific highlight: "remove highlight india".
-  const remove = lower.match(/^remove (?:the )?highlight (?:from |on |of )?(.+)$/);
-  if (remove?.[1]) {
-    return { kind: "removeHighlight", text: remove[1].trim() };
+  // 4. Remove a specific highlight: "remove highlight india"
+  const removeMatch = lower.match(/^remove\s+(?:the\s+)?highlight\s+(?:from\s+|on\s+|of\s+)?(.+)$/);
+  if (removeMatch?.[1]) {
+    const t = removeMatch[1].trim();
+    if (t) return { kind: "removeHighlight", text: t };
   }
 
-  // Highlight with a colour: "highlight india in red".
-  const colored = lower.match(
-    new RegExp(`^highlight (?:the )?(.+?) (?:in|with|using) (${COLORS.join("|")})$`),
+  // 5. Highlight with color: "highlight india in red|yellow|green|blue"
+  const coloredMatch = lower.match(
+    /^highlight\s+(?:the\s+)?(.+?)\s+(?:in|with|using)\s+(yellow|red|green|blue)$/,
   );
-  if (colored?.[1] && colored[2]) {
-    return { kind: "highlight", text: colored[1].trim(), color: colored[2] };
+  if (coloredMatch?.[1] && coloredMatch[2]) {
+    const t = coloredMatch[1].trim();
+    if (t) return { kind: "highlight", text: t, color: coloredMatch[2] };
   }
 
-  // Plain highlight: "highlight india".
-  const highlight = lower.match(/^highlight (?:the )?(.+)$/);
-  if (highlight?.[1]) {
-    return { kind: "highlight", text: highlight[1].trim(), color: "yellow" };
+  // 6. Plain highlight: "highlight india"
+  const plainMatch = lower.match(/^highlight\s+(?:the\s+)?(.+)$/);
+  if (plainMatch?.[1]) {
+    const t = plainMatch[1].trim();
+    if (t) return { kind: "highlight", text: t, color: "yellow" };
   }
 
-  // Go to a slide by its text/title: "go to the introduction slide".
-  const byText = lower.match(/^go to (?:the )?(.+?) slide$/);
-  if (byText?.[1]) {
-    return { kind: "slideByText", text: byText[1].trim() };
+  // Optional: Extended plan title search: "go to the introduction slide"
+  if (allowExtended) {
+    const byText = lower.match(/^go to (?:the )?(.+?) slide$/);
+    if (byText?.[1]) {
+      return { kind: "slideByText", text: byText[1].trim() };
+    }
   }
 
-  // Anything else is normal presentation speech — ignore it.
+  // Ordinary speech -> DO NOTHING
   return null;
 }
 
@@ -298,21 +320,22 @@ export function useVoiceControl({
 
       let cmd = resolveCommand(text, extendedRef.current);
 
-      // Confidence gate applies only to the word commands ("next" /
-      // "previous") and the extended-plan phrasings. Chrome's Web Speech API
-      // routinely reports 0 or near-0 confidence for short single-word final
-      // results — spoken numbers would be silently discarded here, so they
-      // are validated by the strict whole-utterance parse instead: a bare
-      // "5" is unambiguous, while ordinary speech ("I have five points")
-      // still resolves to nothing.
-      const isBareNumber =
-        (cmd?.kind === "slide" && !extendedRef.current) ||
-        (cmd?.kind === "slide" && /^[\d\s.,!?;:'’“”-]+$/.test(normalise(text)));
-      if (cmd && !confident && !isBareNumber) cmd = null;
+      // Numeric commands, highlight commands, and exact navigation words are strictly
+      // parsed whole-utterance commands. Chrome's Web Speech API routinely reports
+      // 0 or near-0 confidence for short single words/numbers. They should not be
+      // discarded by confidence gate.
+      const isStrictCommand =
+        cmd?.kind === "slide" ||
+        cmd?.kind === "highlight" ||
+        cmd?.kind === "removeHighlight" ||
+        cmd?.kind === "clearHighlights" ||
+        cmd?.kind === "next" ||
+        cmd?.kind === "prev";
 
-      // Only if the primary transcript resolved nothing do we try the engine's
-      // alternatives — they face the same confidence gate.
-      if (!cmd && confident) {
+      if (cmd && !confident && !isStrictCommand) cmd = null;
+
+      // If the primary transcript did not resolve to a command, try alternatives
+      if (!cmd) {
         for (const alt of alternatives) {
           const r = resolveCommand(alt, extendedRef.current);
           if (r) {

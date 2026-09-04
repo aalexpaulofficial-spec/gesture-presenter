@@ -119,20 +119,31 @@ export function DeckStage({ buffer, index, pointer, highlights = [], onReady, on
         ) : null}
         
         {/* Voice highlights */}
-        {highlights.map((h) => (
-          <div
-            key={h.id}
-            className="pointer-events-none absolute z-20 border-2 rounded-sm transition-all duration-300"
-            style={{
-              left: `${h.box.left * 100}%`,
-              top: `${h.box.top * 100}%`,
-              width: `${h.box.width * 100}%`,
-              height: `${h.box.height * 100}%`,
-              borderColor: h.color,
-              backgroundColor: `${h.color === 'yellow' ? 'rgba(255, 255, 0, 0.3)' : h.color === 'red' ? 'rgba(255, 0, 0, 0.3)' : h.color === 'green' ? 'rgba(0, 255, 0, 0.3)' : h.color === 'blue' ? 'rgba(0, 0, 255, 0.3)' : 'rgba(255, 255, 0, 0.3)'}`,
-            }}
-          />
-        ))}
+        {highlights.map((h) => {
+          const colorKey = h.color.toLowerCase();
+          const colorMap: Record<string, { border: string; bg: string }> = {
+            yellow: { border: "#eab308", bg: "rgba(250, 204, 21, 0.35)" },
+            red: { border: "#ef4444", bg: "rgba(239, 68, 68, 0.35)" },
+            green: { border: "#22c55e", bg: "rgba(34, 197, 94, 0.35)" },
+            blue: { border: "#3b82f6", bg: "rgba(59, 130, 246, 0.35)" },
+          };
+          const current = colorMap[colorKey] || colorMap.yellow;
+          return (
+            <div
+              key={h.id}
+              className="pointer-events-none absolute z-20 border-2 rounded-sm transition-all duration-300"
+              style={{
+                left: `${h.box.left * 100}%`,
+                top: `${h.box.top * 100}%`,
+                width: `${h.box.width * 100}%`,
+                height: `${h.box.height * 100}%`,
+                borderColor: current.border,
+                backgroundColor: current.bg,
+                boxShadow: `0 0 10px ${current.bg}`,
+              }}
+            />
+          );
+        })}
       </div>
     </div>
   );

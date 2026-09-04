@@ -148,6 +148,9 @@ function PresentPage() {
   const [highlights, setHighlights] = useState<VoiceHighlight[]>([]);
   const [laserEnabled, setLaserEnabled] = useState(true);
 
+  const slideCountRef = useRef(slideCount);
+  slideCountRef.current = slideCount;
+
   const stageWrapRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const fileRef = useRef<File | null>(null);
@@ -155,7 +158,8 @@ function PresentPage() {
   const go = useCallback(
     (delta: number) => {
       setIndex((i) => {
-        const max = Math.max(0, slideCount - 1);
+        const total = slideCountRef.current || slideCount;
+        const max = Math.max(0, total - 1);
         return Math.min(max, Math.max(0, i + delta));
       });
     },
@@ -182,6 +186,8 @@ function PresentPage() {
     setFailure(null);
     setIndex(0);
     setSlideCount(0);
+    setMetadata(null);
+    setHighlights([]);
     setPhase("uploading");
     setProgress(12);
     const buf = await file.arrayBuffer();
@@ -244,32 +250,96 @@ function PresentPage() {
 
   const handleHighlight = useCallback(
     (text: string, color: string) => {
-      const slide = metadata?.[index];
-      if (!slide) return;
-      const elements: any[] = slide.text_elements || [];
       const needle = text.toLowerCase().trim();
+      if (!needle) return;
+
+      // 1. Search extracted metadata for current slide
+      const slide = metadata?.[index];
+      const elements: any[] = slide?.text_elements || [];
       const match =
         elements.find((e) => e.text.toLowerCase().includes(needle)) ??
         elements.find((e) =>
           needle.split(" ").some((word) => word.length > 2 && e.text.toLowerCase().includes(word)),
         );
+
       if (match) {
-        setHighlights((prev) => [
-          ...prev,
-          {
-            id: Math.random().toString(36).slice(2),
-            text: match.text,
-            color,
-            box: { left: match.left, top: match.top, width: match.width, height: match.height },
-          },
-        ]);
+        setHighlights((prev) => {
+          const filtered = prev.filter(
+            (h) => !h.text.toLowerCase().includes(needle) && !needle.includes(h.text.toLowerCase()),
+          );
+          return [
+            ...filtered,
+            {
+              id: Math.random().toString(36).slice(2),
+              text: match.text,
+              color,
+              box: { left: match.left, top: match.top, width: match.width, height: match.height },
+            },
+          ];
+        });
+        return;
       }
+
+      // 2. Fallback: Search rendered DOM inside slide stage container
+      const stage = stageWrapRef.current?.querySelector(".deck-stage") as HTMLElement | null;
+      if (stage) {
+        const stageRect = stage.getBoundingClientRect();
+        if (stageRect.width > 0 && stageRect.height > 0) {
+          const walker = document.createTreeWalker(stage, NodeFilter.SHOW_TEXT);
+          let node: Node | null;
+          let matchedEl: HTMLElement | SVGElement | null = null;
+          while ((node = walker.nextNode())) {
+            const val = node.nodeValue?.toLowerCase().trim() || "";
+            if (val.includes(needle) || (needle.length > 3 && val.includes(needle.slice(0, 4)))) {
+              const parent = node.parentElement;
+              if (parent && parent !== stage) {
+                matchedEl = parent;
+                break;
+              }
+            }
+          }
+
+          if (matchedEl) {
+            const elRect = matchedEl.getBoundingClientRect();
+            const left = Math.max(0, (elRect.left - stageRect.left) / stageRect.width);
+            const top = Math.max(0, (elRect.top - stageRect.top) / stageRect.height);
+            const width = Math.min(1 - left, elRect.width / stageRect.width);
+            const height = Math.min(1 - top, elRect.height / stageRect.height);
+
+            if (width > 0 && height > 0) {
+              setHighlights((prev) => {
+                const filtered = prev.filter(
+                  (h) => !h.text.toLowerCase().includes(needle) && !needle.includes(h.text.toLowerCase()),
+                );
+                return [
+                  ...filtered,
+                  {
+                    id: Math.random().toString(36).slice(2),
+                    text: matchedEl!.textContent?.trim() || needle,
+                    color,
+                    box: { left, top, width, height },
+                  },
+                ];
+              });
+              return;
+            }
+          }
+        }
+      }
+
+      // If text does not exist on current slide: DO NOTHING (no fake highlight)
     },
     [metadata, index],
   );
 
   const handleRemoveHighlight = useCallback((text: string) => {
-    setHighlights((prev) => prev.filter((h) => !h.text.toLowerCase().includes(text.toLowerCase())));
+    const needle = text.toLowerCase().trim();
+    if (!needle) return;
+    setHighlights((prev) =>
+      prev.filter(
+        (h) => !h.text.toLowerCase().includes(needle) && !needle.includes(h.text.toLowerCase()),
+      ),
+    );
   }, []);
 
   const handleClearHighlights = useCallback(() => {
@@ -298,14 +368,13 @@ function PresentPage() {
 
   const { micState, status: voiceStatus, supported } = useVoiceControl({
     enabled: isPro && (phase === "preview" || phase === "ready"),
-    // Master Voice keeps the strict command set: "next" / "previous" / NUMBER.
-    // Master Write / Master AI additionally use highlight + "go to … slide".
-    extendedCommands: planName !== "MASTER VOICE",
+    extendedCommands: true,
     onNext: () => go(1),
     onPrev: () => go(-1),
     onGoToSlide: (slide: number) => {
-      const max = Math.max(0, slideCount - 1);
-      if (slide < 0 || slide > max) return false;
+      const total = slideCountRef.current || slideCount;
+      const max = Math.max(0, total - 1);
+      if (slide < 0 || (total > 0 && slide > max)) return false;
       setIndex(slide);
       return true;
     },
