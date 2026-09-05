@@ -11,9 +11,9 @@ type Props = {
   gesture: Gesture;
   handVisible: boolean;
   hidden: boolean;
-  /** Overrides the "pointing" gesture label so Master Write never shows "laser" (§12). */
+  /** Overrides the "pointing" gesture label so Master Write never shows "laser" (§13). */
   pointingLabel?: string | undefined;
-  /** Label shown for the index + middle gesture in Master Write (the eraser). */
+  /** Label for the index + middle gesture in Master Write (it reopens the toolbar). */
   twoFingerLabel?: string | undefined;
   onRetry: () => void;
 };

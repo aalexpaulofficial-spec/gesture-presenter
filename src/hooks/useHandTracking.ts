@@ -14,9 +14,11 @@ const MODEL_URL =
 
 export type CameraStatus = "idle" | "starting" | "live" | "error";
 /**
- * The index fingertip mapped into slide space (0..1 on both axes), tagged with
- * which Master Write gesture produced it: a lone index finger writes, index +
- * middle drives the eraser (§2 §6). Laser mode never emits this.
+ * The index fingertip (landmark 8) mapped into slide space (0..1 on both axes),
+ * tagged with which Master Write gesture produced it: a lone index finger drives
+ * the cursor, index + middle re-opens the writing toolbar (§3 §7). This is a
+ * cursor sample and nothing more — it never means "write" on its own (§1 §5).
+ * Laser mode never emits it (§13).
  */
 export type IndexFingerPoint = {
   slide: { x: number; y: number };
@@ -70,10 +72,11 @@ export function useHandTracking({
       close: () => void;
     } | null = null;
     const smoother = new PointSmoother();
-    // Master Write needs the ink to sit right under the fingertip. A higher base
-    // + gain tracks fast strokes with far less lag than the laser feel, while the
-    // laser keeps its original smoother untouched (Master Hand / Voice unchanged).
-    const writeSmoother = new PointSmoother(0.6, 12, 0.95);
+    // Master Write needs the ink to sit right under the fingertip, so it gets its
+    // own near-passthrough smoother: enough to take the shake off a raw landmark,
+    // not enough to trail behind a fast stroke (§8). The laser keeps the original
+    // smoother untouched, so Master Hand and Master Voice are unchanged.
+    const writeSmoother = new PointSmoother(0.82, 16, 1);
     const gate = new GestureGate();
     let lastTs = -1;
 
@@ -165,13 +168,16 @@ export function useHandTracking({
           setGesture(g);
 
           const writing = pointerModeRef.current === "writing";
+          // Landmark 8 is the INDEX FINGERTIP — never the wrist, the palm centre
+          // or a hand bounding box. Everything downstream follows this point (§7).
           const tip = lm[8];
 
           if (g === "pointing" && tip) {
             const mapped = mapToSlide(tip.x, tip.y);
             if (writing) {
-              // A lone index finger writes. It never feeds the laser (§12); the
-              // responsive smoother keeps ink under the fingertip (§4).
+              // A lone index finger drives the writing cursor. It never feeds the
+              // laser (§13), and raising it does not start a stroke by itself —
+              // WriteGestureMachine decides that (§1 §5).
               smoother.reset();
               const s = writeSmoother.next(mapped.x, mapped.y);
               pointerRef.current(null);
@@ -184,7 +190,8 @@ export function useHandTracking({
               indexPointRef.current?.(null);
             }
           } else if (g === "two-fingers" && writing && tip) {
-            // Index + middle drives the eraser, tracked just as tightly as the pen.
+            // Index + middle re-opens the writing toolbar. The fingertip it reports
+            // is still landmark 8, tracked just as tightly as the pen (§7 §9).
             smoother.reset();
             const mapped = mapToSlide(tip.x, tip.y);
             const s = writeSmoother.next(mapped.x, mapped.y);

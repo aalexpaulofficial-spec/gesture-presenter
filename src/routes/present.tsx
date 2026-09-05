@@ -709,8 +709,8 @@ function PresentPage() {
           gesture={gesture}
           handVisible={handVisible}
           hidden={isFullscreen}
-          pointingLabel={capabilities.writing ? "Index finger — writing" : undefined}
-          twoFingerLabel={capabilities.writing ? "Index + middle — eraser" : undefined}
+          pointingLabel={capabilities.writing ? "Index finger — cursor" : undefined}
+          twoFingerLabel={capabilities.writing ? "Index + middle — toolbar" : undefined}
           onRetry={retry}
         />
       )}
@@ -726,10 +726,25 @@ function HowToControl({ planName }: { planName: string }) {
     { icon: "Back", cmd: "Back of Hand", desc: "Previous Slide" },
     { icon: "Fist", cmd: "Close hand -> reopen Back of Hand", desc: "Previous Slide again" },
     capabilities.writing
-      ? { icon: "Draw", cmd: "Raised Index Finger", desc: "Write on the slide" }
+      ? {
+          icon: "Tools",
+          cmd: "Raised Index Finger",
+          desc: "Open the writing toolbar - it does not write yet",
+        }
       : { icon: "Point", cmd: "Raised Index Finger", desc: "Laser Pointer" },
     ...(capabilities.writing
-      ? [{ icon: "Erase", cmd: "Index + Middle Finger", desc: "Open eraser controls" }]
+      ? [
+          {
+            icon: "Pick",
+            cmd: "Fingertip on a Color",
+            desc: "Select that color, then move your fingertip to write",
+          },
+          {
+            icon: "Erase",
+            cmd: "Index + Middle Finger",
+            desc: "Reopen the toolbar for Manual Eraser or Erase All",
+          },
+        ]
       : []),
   ];
 
@@ -777,7 +792,7 @@ function HowToControl({ planName }: { planName: string }) {
           </ul>
           <p className="mt-3 rounded-lg bg-primary-soft/50 px-3 py-2 text-xs text-muted-foreground">
             {capabilities.writing
-              ? "In Master Write, the index finger is reserved for writing only. Laser pointer is not available and cannot be triggered accidentally."
+              ? "In Master Write, raising your index finger opens the writing toolbar - it never starts writing on its own. Select a color (or an eraser) first, then move your fingertip to write. Laser pointer is not available and cannot be triggered accidentally."
               : "The laser pointer works only from your hand - a raised index finger. It is never triggered by voice."}
           </p>
         </div>
@@ -819,13 +834,13 @@ function HowToControl({ planName }: { planName: string }) {
             </p>
             <ol className="space-y-2.5 text-sm">
               {[
-                "Raise your index finger to open the color palette — exactly 5 colors.",
-                "Hold your fingertip on a color to pick it; the palette closes and that color is armed.",
-                "Move your index finger across the slide to write in real time, right under your fingertip.",
-                "Lower your index finger to stop — the stroke ends cleanly; raise it again to keep writing.",
-                "Raise your index AND middle fingers together to open the eraser controls: Manual Eraser and Erase All.",
-                "Pick Manual Eraser, then move your fingertip over your marks to rub out only what it passes over.",
-                "Pick Erase All to remove every mark from the current slide at once.",
+                "Raise your index finger. The writing toolbar appears — 5 colors, Manual Eraser and Erase All. Nothing is written yet.",
+                "Your fingertip is a cursor first: a small ring follows the exact tip of your index finger across the whole slide.",
+                "Hold the ring on a color for a moment to select it. The toolbar disappears and that color is armed and ready.",
+                "Now move your fingertip to write, in real time and right under the tip. Holding still simply lifts the pen.",
+                "Raise your index AND middle fingers together at any time to bring the toolbar back — to change color or reach an eraser.",
+                "Select Manual Eraser, then sweep your fingertip over your marks to rub out only what it passes over.",
+                "Select Erase All to clear every mark on the current slide, then carry on pointing and writing as usual.",
                 "Writing is kept separately for each slide for the whole session; your PPT is never modified.",
               ].map((step, stepIndex) => (
                 <li key={stepIndex} className="flex items-start gap-3">
@@ -837,9 +852,9 @@ function HowToControl({ planName }: { planName: string }) {
               ))}
             </ol>
             <p className="mt-3 rounded-lg bg-primary-soft/50 px-3 py-2 text-xs text-muted-foreground">
-              No laser pointer is available in Master Write — the index finger is reserved for
-              writing and never triggers a laser. Writing is a frontend overlay; your original
-              PPT/PPTX is never modified.
+              A raised index finger never writes by itself: raise, select a color, then write. No
+              laser pointer is available in Master Write. Writing and erasing are a frontend overlay
+              — your original PPT/PPTX is never modified.
             </p>
           </div>
         )}

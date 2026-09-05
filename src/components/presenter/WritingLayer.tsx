@@ -3,17 +3,24 @@ import { Eraser, Trash2 } from "lucide-react";
 import {
   ERASER_MENU_ITEMS,
   ERASER_RADIUS,
-  WRITING_COLORS,
   WRITING_COLOR_ORDER,
   WriteGestureMachine,
   colorValue,
   eraseFromStrokes,
   type CursorMode,
   type WriteMenuItem,
+  type WriteTool,
   type WritingColor,
   type WritingPoint,
   type WritingStroke,
 } from "@/lib/writing";
+
+/**
+ * The Master Write overlay: the ink canvas, the fingertip cursor, and the one
+ * floating writing toolbar (§2). It sits on top of the rendered slide and never
+ * touches the uploaded deck (§14). Nothing here reads the camera — fingertip
+ * samples arrive through `tickRef` from the existing hand-tracking loop (§15).
+ */
 
 /** A fingertip sample pushed in from the hand-tracking loop, in slide space. */
 export type WriteTick = (
@@ -35,6 +42,17 @@ type Props = {
   onClearAll: () => void;
   onCommitStroke: (stroke: WritingStroke) => void;
   onErase: (point: WritingPoint) => void;
+};
+
+/** Names shown while the fingertip dwells on a toolbar item. */
+const ITEM_LABEL: Record<WriteMenuItem, string> = {
+  "color-0": "Red",
+  "color-1": "Blue",
+  "color-2": "Green",
+  "color-3": "Yellow",
+  "color-4": "White",
+  "manual-eraser": "Manual Eraser",
+  "clear-all": "Erase All",
 };
 
 /** Paints one stroke with midpoint-quadratic smoothing so lines never look faceted. */
@@ -79,7 +97,6 @@ function drawStroke(
   if (last) ctx.lineTo(last.x * width, last.y * height);
   ctx.stroke();
 }
-
 export function WritingLayer({
   strokes,
   slideIndex,
@@ -92,8 +109,8 @@ export function WritingLayer({
 }: Props) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const menuBoxRef = useRef<HTMLDivElement | null>(null);
   const cursorRef = useRef<HTMLDivElement | null>(null);
+  const cursorDotRef = useRef<HTMLSpanElement | null>(null);
   const buttonRefs = useRef(new Map<WriteMenuItem, HTMLButtonElement>());
   const dwellRingRef = useRef<SVGCircleElement | null>(null);
 
@@ -101,18 +118,18 @@ export function WritingLayer({
   const liveRef = useRef<WritingStroke | null>(null);
   const strokesRef = useRef<WritingStroke[]>(strokes);
   const sizeRef = useRef({ w: 0, h: 0, dpr: 1 });
-  const menuRectsRef = useRef(new Map<WriteMenuItem, SlideRect>());
-  const menuRectRef = useRef<SlideRect | null>(null);
+  const itemRectsRef = useRef(new Map<WriteMenuItem, SlideRect>());
   const idRef = useRef(0);
 
-  const colorMenuOpenRef = useRef(false);
-  const eraserMenuOpenRef = useRef(false);
+  const toolbarOpenRef = useRef(false);
   const hoveredRef = useRef<WriteMenuItem | null>(null);
-  const [colorMenuOpen, setColorMenuOpen] = useState(false);
-  const [eraserMenuOpen, setEraserMenuOpen] = useState(false);
+  const toolRef = useRef<WriteTool>("pen");
+  const [toolbarOpen, setToolbarOpen] = useState(false);
   const [hovered, setHovered] = useState<WriteMenuItem | null>(null);
+  const [tool, setTool] = useState<WriteTool>("pen");
 
-  // Latest callbacks/props reached through refs so the tick closure stays stable.
+  // Latest callbacks/props reached through refs so the tick closure stays stable
+  // and no fingertip sample ever costs a React render (§8).
   const onSelectColorRef = useRef(onSelectColor);
   const onClearAllRef = useRef(onClearAll);
   const onCommitStrokeRef = useRef(onCommitStroke);
@@ -128,7 +145,6 @@ export function WritingLayer({
     idRef.current += 1;
     return `w${idRef.current}`;
   }, []);
-
   const repaint = useCallback(() => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
@@ -141,7 +157,8 @@ export function WritingLayer({
     if (liveRef.current) drawStroke(ctx, liveRef.current, w, h);
   }, []);
 
-  // Size the canvas to the rendered slide box (survives scaling and fullscreen).
+  // Size the canvas to the rendered slide box, so slide space (0..1) always maps
+  // to the visible slide — through window resizes, scaling and fullscreen (§3).
   useEffect(() => {
     const root = rootRef.current;
     const canvas = canvasRef.current;
@@ -152,7 +169,7 @@ export function WritingLayer({
       sizeRef.current = { w: rect.width, h: rect.height, dpr };
       canvas.width = Math.max(1, Math.round(rect.width * dpr));
       canvas.height = Math.max(1, Math.round(rect.height * dpr));
-      measureMenu();
+      measureToolbar();
       repaint();
     };
     measure();
@@ -161,25 +178,25 @@ export function WritingLayer({
     return () => ro.disconnect();
   }, [repaint]);
 
-  // Cache the menu geometry in slide space (0..1) for fingertip hit-testing.
-  function measureMenu(): void {
+  // Cache each toolbar button in slide space (0..1) for fingertip hit-testing.
+  // The toolbar is always mounted and only fades, so these rects stay valid.
+  function measureToolbar(): void {
     const root = rootRef.current;
-    const box = menuBoxRef.current;
     if (!root) return;
     const rootRect = root.getBoundingClientRect();
     if (rootRect.width === 0 || rootRect.height === 0) return;
-    const toSlide = (r: DOMRect): SlideRect => ({
-      x: (r.left - rootRect.left) / rootRect.width,
-      y: (r.top - rootRect.top) / rootRect.height,
-      w: r.width / rootRect.width,
-      h: r.height / rootRect.height,
-    });
-    menuRectRef.current = box ? toSlide(box.getBoundingClientRect()) : null;
     const rects = new Map<WriteMenuItem, SlideRect>();
-    buttonRefs.current.forEach((btn, key) => rects.set(key, toSlide(btn.getBoundingClientRect())));
-    menuRectsRef.current = rects;
+    buttonRefs.current.forEach((btn, key) => {
+      const r = btn.getBoundingClientRect();
+      rects.set(key, {
+        x: (r.left - rootRect.left) / rootRect.width,
+        y: (r.top - rootRect.top) / rootRect.height,
+        w: r.width / rootRect.width,
+        h: r.height / rootRect.height,
+      });
+    });
+    itemRectsRef.current = rects;
   }
-
   // Keep the local mirror in step with the persisted strokes (slide switches,
   // clears and erases all flow through here) and repaint.
   useEffect(() => {
@@ -187,24 +204,25 @@ export function WritingLayer({
     repaint();
   }, [strokes, repaint]);
 
-  // A new slide starts with a clean slate: drop any half-formed gesture.
+  // A new slide starts from NORMAL: no tool armed, no toolbar, no half-drawn
+  // stroke (§12). The presenter picks again before anything can be written.
   useEffect(() => {
     machineRef.current.reset();
     liveRef.current = null;
-    colorMenuOpenRef.current = false;
-    eraserMenuOpenRef.current = false;
+    toolbarOpenRef.current = false;
     hoveredRef.current = null;
-    setColorMenuOpen(false);
-    setEraserMenuOpen(false);
+    toolRef.current = "pen";
+    setToolbarOpen(false);
     setHovered(null);
+    setTool("pen");
     if (cursorRef.current) cursorRef.current.style.display = "none";
     repaint();
   }, [slideIndex, repaint]);
 
-  // Re-measure whenever a menu opens, since the buttons have just mounted.
+  // Re-measure when the toolbar appears, in case the layout shifted since mount.
   useEffect(() => {
-    if (colorMenuOpen || eraserMenuOpen) measureMenu();
-  }, [colorMenuOpen, eraserMenuOpen]);
+    if (toolbarOpen) measureToolbar();
+  }, [toolbarOpen]);
 
   function commitLiveStroke(): void {
     const stroke = liveRef.current;
@@ -215,6 +233,7 @@ export function WritingLayer({
     }
   }
 
+  /** Rubs out only Master Write strokes under the fingertip — never the PPT (§9). */
   function applyErase(point: WritingPoint): void {
     const current = strokesRef.current;
     const next = eraseFromStrokes(current, point, ERASER_RADIUS, nextId);
@@ -223,27 +242,37 @@ export function WritingLayer({
       onEraseRef.current(point);
     }
   }
-
+  /**
+   * Moves the fingertip cursor. It is a plain style write on every sample — the
+   * ring sits exactly on the fingertip, and its look says whether the finger is
+   * pointing or actually working (§3 §5). Deliberately not a laser dot (§13).
+   */
   function updateCursor(point: WritingPoint | null, mode: CursorMode): void {
     const el = cursorRef.current;
+    const dot = cursorDotRef.current;
     if (!el) return;
     if (!point || !mode) {
       el.style.display = "none";
       return;
     }
-    const eraser = mode === "eraser";
-    const size = eraser ? ERASER_RADIUS * 2 * sizeRef.current.w : 16;
+    const eraser = mode === "eraser" || mode === "eraser-active";
+    const active = mode === "pen-active" || mode === "eraser-active";
+    const ink = colorValue(colorRef.current);
+    const size = eraser ? Math.max(18, ERASER_RADIUS * 2 * sizeRef.current.w) : 16;
     el.style.display = "block";
     el.style.left = `${point.x * 100}%`;
     el.style.top = `${point.y * 100}%`;
-    el.style.width = `${Math.max(14, size)}px`;
-    el.style.height = `${Math.max(14, size)}px`;
-    el.style.borderColor =
-      mode === "pen"
-        ? colorValue(colorRef.current)
-        : eraser
-          ? "rgba(255,255,255,0.9)"
-          : "rgba(148,163,184,0.9)";
+    el.style.width = `${size}px`;
+    el.style.height = `${size}px`;
+    el.style.borderWidth = active ? "3px" : "2px";
+    el.style.borderColor = eraser
+      ? "rgba(255,255,255,0.92)"
+      : mode === "select"
+        ? "rgba(148,163,184,0.95)"
+        : ink;
+    el.style.backgroundColor = mode === "eraser-active" ? "rgba(255,255,255,0.18)" : "transparent";
+    el.style.boxShadow = mode === "pen-active" ? `0 0 10px ${ink}` : "0 0 8px rgba(0,0,0,0.35)";
+    if (dot) dot.style.backgroundColor = mode === "pen-active" ? ink : "transparent";
   }
 
   function updateDwellRing(dwell: number): void {
@@ -253,42 +282,36 @@ export function WritingLayer({
     ring.style.strokeDasharray = `${circumference}`;
     ring.style.strokeDashoffset = `${circumference * (1 - Math.max(0, Math.min(1, dwell)))}`;
   }
-
   const tick = useCallback<WriteTick>((input) => {
     const now = performance.now();
     const point = input?.point ?? null;
     const gesture = input?.gesture ?? "none";
 
-    // Fingertip → menu hit-test, only while a menu is on screen.
-    let overMenu = false;
+    // Fingertip → toolbar hit-test, only while the toolbar is on screen. When two
+    // padded buttons overlap, the nearest centre wins (§4).
     let hit: WriteMenuItem | null = null;
-    if ((colorMenuOpenRef.current || eraserMenuOpenRef.current) && point) {
-      const box = menuRectRef.current;
-      if (box) {
-        const pad = 0.012;
-        overMenu =
-          point.x >= box.x - pad &&
-          point.x <= box.x + box.w + pad &&
-          point.y >= box.y - pad &&
-          point.y <= box.y + box.h + pad;
-      }
-      if (overMenu) {
-        const pad = 0.006;
-        for (const [candidate, r] of menuRectsRef.current) {
-          if (
-            point.x >= r.x - pad &&
-            point.x <= r.x + r.w + pad &&
-            point.y >= r.y - pad &&
-            point.y <= r.y + r.h + pad
-          ) {
+    if (toolbarOpenRef.current && point) {
+      const pad = 0.008;
+      let best = Infinity;
+      for (const [candidate, r] of itemRectsRef.current) {
+        if (
+          point.x >= r.x - pad &&
+          point.x <= r.x + r.w + pad &&
+          point.y >= r.y - pad &&
+          point.y <= r.y + r.h + pad
+        ) {
+          const dx = point.x - (r.x + r.w / 2);
+          const dy = point.y - (r.y + r.h / 2);
+          const d = dx * dx + dy * dy;
+          if (d < best) {
+            best = d;
             hit = candidate;
-            break;
           }
         }
       }
     }
 
-    const frame = machineRef.current.update({ gesture, point, overMenu, hit, now });
+    const frame = machineRef.current.update({ gesture, point, hit, now });
 
     for (const effect of frame.effects) {
       switch (effect.kind) {
@@ -311,23 +334,27 @@ export function WritingLayer({
         case "select-color":
           onSelectColorRef.current(effect.color);
           break;
+        case "select-eraser":
+          // The armed tool arrives on `frame.tool` below; nothing else to do.
+          break;
         case "clear":
           onClearAllRef.current();
           break;
       }
     }
-
-    if (frame.colorMenuOpen !== colorMenuOpenRef.current) {
-      colorMenuOpenRef.current = frame.colorMenuOpen;
-      setColorMenuOpen(frame.colorMenuOpen);
-    }
-    if (frame.eraserMenuOpen !== eraserMenuOpenRef.current) {
-      eraserMenuOpenRef.current = frame.eraserMenuOpen;
-      setEraserMenuOpen(frame.eraserMenuOpen);
+    // Only three things ever reach React: toolbar visibility, the hovered item and
+    // the armed tool. Coordinates stay in refs and on the canvas (§8).
+    if (frame.toolbarOpen !== toolbarOpenRef.current) {
+      toolbarOpenRef.current = frame.toolbarOpen;
+      setToolbarOpen(frame.toolbarOpen);
     }
     if (frame.hovered !== hoveredRef.current) {
       hoveredRef.current = frame.hovered;
       setHovered(frame.hovered);
+    }
+    if (frame.tool !== toolRef.current) {
+      toolRef.current = frame.tool;
+      setTool(frame.tool);
     }
     updateDwellRing(frame.hovered ? frame.dwell : 0);
     updateCursor(frame.cursor, frame.cursorMode);
@@ -335,7 +362,7 @@ export function WritingLayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Hand the tick to the parent so the camera loop can push samples into it.
+  // Hand the tick to the parent so the existing camera loop can push samples in.
   useEffect(() => {
     tickRef.current = tick;
     return () => {
@@ -364,86 +391,96 @@ export function WritingLayer({
       />
     </svg>
   );
-
   return (
     <div ref={rootRef} className="pointer-events-none absolute inset-0 z-30">
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" aria-hidden="true" />
 
-      {/* Fingertip cursor — a hollow ring, deliberately unlike the laser dot. */}
+      {/* Fingertip cursor — a hollow ring that gains a core while it works. */}
       <div
         ref={cursorRef}
         aria-hidden="true"
-        className="absolute z-10 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 shadow-[0_0_8px_rgba(0,0,0,0.35)]"
+        className="absolute z-10 -translate-x-1/2 -translate-y-1/2 rounded-full border-2"
         style={{ display: "none" }}
-      />
+      >
+        <span
+          ref={cursorDotRef}
+          className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full"
+        />
+      </div>
 
-      {/* Colour palette — a lone index finger, five colours (§2 §15). */}
-      {colorMenuOpen ? (
-        <div
-          ref={menuBoxRef}
-          className="absolute bottom-[6%] left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-2xl border border-border bg-card/95 px-2.5 py-2 shadow-soft backdrop-blur"
-        >
-          {WRITING_COLOR_ORDER.map((key) => {
-            const colorIndex = Number(key.slice("color-".length));
-            const isActive = key === color;
-            const isHovered = key === hovered;
-            const ringClass = isActive
+      {/* The one writing toolbar (§2): five colours, Manual Eraser, Erase All.
+          Always mounted so the fingertip hit-boxes stay measured; it fades in and
+          out instead of remounting, and gets out of the way after a pick (§11). */}
+      <div
+        aria-hidden={!toolbarOpen}
+        className={`absolute bottom-[5%] left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-2xl border border-border bg-card/70 px-2.5 py-2 shadow-soft backdrop-blur-md transition-opacity duration-200 ease-out ${
+          toolbarOpen ? "opacity-100" : "opacity-0"
+        }`}
+      >
+        {toolbarOpen && hovered ? (
+          <span className="pointer-events-none absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md border border-border bg-card/90 px-2 py-0.5 text-[10px] font-medium text-foreground shadow-soft backdrop-blur">
+            {ITEM_LABEL[hovered]}
+          </span>
+        ) : null}
+        {WRITING_COLOR_ORDER.map((key) => {
+          const isActive = tool === "pen" && key === color;
+          const isHovered = key === hovered;
+          const ringClass = isHovered
+            ? "ring-2 ring-amber-500 ring-offset-2 ring-offset-card"
+            : isActive
               ? "ring-2 ring-primary ring-offset-2 ring-offset-card"
-              : isHovered
-                ? "ring-2 ring-amber-500 ring-offset-2 ring-offset-card"
-                : "";
-            return (
-              <button
-                key={key}
-                ref={setButtonRef(key)}
-                type="button"
-                aria-label={`Writing color ${colorIndex + 1}`}
-                onClick={() => onSelectColor(key)}
-                className={`pointer-events-auto relative grid h-9 w-9 place-items-center rounded-full border border-border transition ${ringClass}`}
-                style={{ backgroundColor: WRITING_COLORS[colorIndex] }}
-              >
-                {isHovered ? dwellRing : null}
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
-
-      {/* Eraser controls — index + middle finger: Manual Eraser and Erase All (§6). */}
-      {eraserMenuOpen ? (
-        <div
-          ref={menuBoxRef}
-          className="absolute bottom-[6%] left-1/2 z-20 flex -translate-x-1/2 items-end gap-4 rounded-2xl border border-border bg-card/95 px-4 py-2.5 shadow-soft backdrop-blur"
-        >
-          {ERASER_MENU_ITEMS.map((key) => {
-            const isHovered = key === hovered;
-            const ringClass = isHovered
-              ? "ring-2 ring-amber-500 ring-offset-2 ring-offset-card"
               : "";
-            const label = key === "manual-eraser" ? "Manual Eraser" : "Erase All";
-            return (
-              <div key={key} className="flex flex-col items-center gap-1">
-                <button
-                  ref={setButtonRef(key)}
-                  type="button"
-                  aria-label={label}
-                  title={label}
-                  onClick={key === "clear-all" ? () => onClearAll() : undefined}
-                  className={`pointer-events-auto relative grid h-11 w-11 place-items-center rounded-full border border-border bg-secondary text-foreground transition ${ringClass}`}
-                >
-                  {key === "manual-eraser" ? (
-                    <Eraser className="h-5 w-5" />
-                  ) : (
-                    <Trash2 className="h-5 w-5" />
-                  )}
-                  {isHovered ? dwellRing : null}
-                </button>
-                <span className="text-[10px] font-medium text-muted-foreground">{label}</span>
-              </div>
-            );
-          })}
-        </div>
-      ) : null}
+          return (
+            <button
+              key={key}
+              ref={setButtonRef(key)}
+              type="button"
+              tabIndex={toolbarOpen ? 0 : -1}
+              aria-label={`Write in ${ITEM_LABEL[key]}`}
+              title={ITEM_LABEL[key]}
+              onClick={() => onSelectColor(key)}
+              className={`relative grid h-9 w-9 place-items-center rounded-full border border-border transition ${
+                toolbarOpen ? "pointer-events-auto" : "pointer-events-none"
+              } ${ringClass}`}
+              style={{ backgroundColor: colorValue(key) }}
+            >
+              {isHovered ? dwellRing : null}
+            </button>
+          );
+        })}
+
+        <span aria-hidden="true" className="mx-0.5 h-6 w-px shrink-0 bg-border" />
+        {ERASER_MENU_ITEMS.map((key) => {
+          const isActive = key === "manual-eraser" && tool === "eraser";
+          const isHovered = key === hovered;
+          const ringClass = isHovered
+            ? "ring-2 ring-amber-500 ring-offset-2 ring-offset-card"
+            : isActive
+              ? "ring-2 ring-primary ring-offset-2 ring-offset-card"
+              : "";
+          return (
+            <button
+              key={key}
+              ref={setButtonRef(key)}
+              type="button"
+              tabIndex={toolbarOpen ? 0 : -1}
+              aria-label={ITEM_LABEL[key]}
+              title={ITEM_LABEL[key]}
+              onClick={key === "clear-all" ? () => onClearAll() : undefined}
+              className={`relative grid h-9 w-9 place-items-center rounded-full border border-border bg-secondary text-foreground transition ${
+                toolbarOpen ? "pointer-events-auto" : "pointer-events-none"
+              } ${ringClass}`}
+            >
+              {key === "manual-eraser" ? (
+                <Eraser className="h-4 w-4" />
+              ) : (
+                <Trash2 className="h-4 w-4" />
+              )}
+              {isHovered ? dwellRing : null}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
