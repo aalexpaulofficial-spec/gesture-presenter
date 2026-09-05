@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { VoiceHighlight } from "@/hooks/useVoiceControl";
 
 type Previewer = {
@@ -7,19 +7,13 @@ type Previewer = {
   destroy: () => void;
 };
 
-export type WritingPoint = { x: number; y: number };
-export type WritingStroke = {
-  id: string;
-  color: string;
-  points: WritingPoint[];
-};
-
 type Props = {
   /** The user's uploaded deck. It is the only source of truth for what is shown. */
   buffer: ArrayBuffer;
   index: number;
   pointer: { x: number; y: number } | null;
-  writingStrokes?: WritingStroke[];
+  /** Frontend-only annotation layer, rendered inside the slide box so it scales with it. */
+  overlay?: ReactNode;
   highlights?: VoiceHighlight[];
   onReady: (info: { slideCount: number }) => void;
   onError: (message: string) => void;
@@ -29,7 +23,7 @@ export function DeckStage({
   buffer,
   index,
   pointer,
-  writingStrokes = [],
+  overlay,
   highlights = [],
   onReady,
   onError,
@@ -140,44 +134,9 @@ export function DeckStage({
           </div>
         ) : null}
 
-        {/* Writing overlay - frontend-only annotation strokes, never edits the uploaded deck. */}
-        {dims && writingStrokes.length > 0 ? (
-          <svg
-            className="pointer-events-none absolute inset-0 z-[25]"
-            viewBox="0 0 1 1"
-            preserveAspectRatio="none"
-            aria-hidden="true"
-          >
-            {writingStrokes.map((stroke) => {
-              if (stroke.points.length === 0) return null;
-              if (stroke.points.length === 1) {
-                const point = stroke.points[0];
-                if (!point) return null;
-                return (
-                  <circle
-                    key={stroke.id}
-                    cx={point.x}
-                    cy={point.y}
-                    r={0.0045}
-                    fill={stroke.color}
-                  />
-                );
-              }
-              return (
-                <polyline
-                  key={stroke.id}
-                  points={stroke.points.map((p) => `${p.x},${p.y}`).join(" ")}
-                  fill="none"
-                  stroke={stroke.color}
-                  strokeWidth={0.0065}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  vectorEffect="non-scaling-stroke"
-                />
-              );
-            })}
-          </svg>
-        ) : null}
+        {/* Frontend-only annotation layer (Master Write). Rendered inside the slide
+            box so it scales and letterboxes with the deck; it never edits the PPT. */}
+        {dims ? overlay : null}
 
         {/* Voice highlights */}
         {highlights.map((h) => {

@@ -11,10 +11,21 @@ type Props = {
   gesture: Gesture;
   handVisible: boolean;
   hidden: boolean;
+  /** Overrides the "pointing" gesture label so Master Write never shows "laser" (§12). */
+  pointingLabel?: string | undefined;
   onRetry: () => void;
 };
 
-export function CameraWindow({ videoRef, status, error, gesture, handVisible, hidden, onRetry }: Props) {
+export function CameraWindow({
+  videoRef,
+  status,
+  error,
+  gesture,
+  handVisible,
+  hidden,
+  pointingLabel,
+  onRetry,
+}: Props) {
   const [minimized, setMinimized] = useState(false);
   const [pos, setPos] = useState({ x: 16, y: 96 });
   const drag = useRef<{ dx: number; dy: number } | null>(null);
@@ -105,7 +116,13 @@ export function CameraWindow({ videoRef, status, error, gesture, handVisible, hi
             }`}
           />
           <span className="truncate text-[11px] text-muted-foreground">
-            {status === "live" ? gestureLabel[gesture] : status === "error" ? "Camera unavailable" : "Connecting"}
+            {status === "live"
+              ? gesture === "pointing" && pointingLabel
+                ? pointingLabel
+                : gestureLabel[gesture]
+              : status === "error"
+                ? "Camera unavailable"
+                : "Connecting"}
           </span>
         </div>
       </div>

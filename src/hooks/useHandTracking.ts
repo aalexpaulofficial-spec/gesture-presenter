@@ -13,9 +13,9 @@ const MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
 
 export type CameraStatus = "idle" | "starting" | "live" | "error";
+/** The index fingertip mapped into slide space (0..1 on both axes). */
 export type IndexFingerPoint = {
   slide: { x: number; y: number };
-  screen: { x: number; y: number };
 };
 
 type Options = {
@@ -23,7 +23,6 @@ type Options = {
   onAction: (action: "next" | "prev") => void;
   onPointer: (point: { x: number; y: number } | null) => void;
   pointerMode?: "laser" | "writing";
-  onWritePoint?: (point: { x: number; y: number } | null) => void;
   onIndexPoint?: (point: IndexFingerPoint | null) => void;
 };
 
@@ -32,7 +31,6 @@ export function useHandTracking({
   onAction,
   onPointer,
   pointerMode = "laser",
-  onWritePoint,
   onIndexPoint,
 }: Options) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -43,12 +41,10 @@ export function useHandTracking({
 
   const actionRef = useRef(onAction);
   const pointerRef = useRef(onPointer);
-  const writePointRef = useRef(onWritePoint);
   const indexPointRef = useRef(onIndexPoint);
   const pointerModeRef = useRef(pointerMode);
   actionRef.current = onAction;
   pointerRef.current = onPointer;
-  writePointRef.current = onWritePoint;
   indexPointRef.current = onIndexPoint;
   pointerModeRef.current = pointerMode;
 
@@ -149,7 +145,6 @@ export function useHandTracking({
             setGesture("none");
             smoother.reset();
             pointerRef.current(null);
-            writePointRef.current?.(null);
             indexPointRef.current?.(null);
             gate.update("none", performance.now());
             return;
@@ -164,25 +159,19 @@ export function useHandTracking({
             if (tip) {
               const mapped = mapToSlide(tip.x, tip.y);
               const smoothed = smoother.next(mapped.x, mapped.y);
-              indexPointRef.current?.({
-                slide: smoothed,
-                screen: {
-                  x: (1 - tip.x) * window.innerWidth,
-                  y: tip.y * window.innerHeight,
-                },
-              });
+              // In writing mode the index finger drives writing only — the laser
+              // never receives it (§12). In laser mode it drives the laser dot.
               if (pointerModeRef.current === "writing") {
                 pointerRef.current(null);
-                writePointRef.current?.(smoothed);
+                indexPointRef.current?.({ slide: smoothed });
               } else {
                 pointerRef.current(smoothed);
-                writePointRef.current?.(null);
+                indexPointRef.current?.(null);
               }
             }
           } else {
             smoother.reset();
             pointerRef.current(null);
-            writePointRef.current?.(null);
             indexPointRef.current?.(null);
           }
 
