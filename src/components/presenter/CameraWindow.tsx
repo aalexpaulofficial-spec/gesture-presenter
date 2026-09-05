@@ -13,6 +13,8 @@ type Props = {
   hidden: boolean;
   /** Overrides the "pointing" gesture label so Master Write never shows "laser" (§12). */
   pointingLabel?: string | undefined;
+  /** Label shown for the index + middle gesture in Master Write (the eraser). */
+  twoFingerLabel?: string | undefined;
   onRetry: () => void;
 };
 
@@ -24,6 +26,7 @@ export function CameraWindow({
   handVisible,
   hidden,
   pointingLabel,
+  twoFingerLabel,
   onRetry,
 }: Props) {
   const [minimized, setMinimized] = useState(false);
@@ -45,14 +48,17 @@ export function CameraWindow({
     [pos],
   );
 
-  const onPointerMove = useCallback((e: React.PointerEvent) => {
-    if (!drag.current) return;
-    const width = minimized ? 150 : 232;
-    setPos({
-      x: Math.max(8, Math.min(window.innerWidth - width, e.clientX - drag.current.dx)),
-      y: Math.max(8, Math.min(window.innerHeight - 80, e.clientY - drag.current.dy)),
-    });
-  }, [minimized]);
+  const onPointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      if (!drag.current) return;
+      const width = minimized ? 150 : 232;
+      setPos({
+        x: Math.max(8, Math.min(window.innerWidth - width, e.clientX - drag.current.dx)),
+        y: Math.max(8, Math.min(window.innerHeight - 80, e.clientY - drag.current.dy)),
+      });
+    },
+    [minimized],
+  );
 
   const stopDrag = useCallback(() => {
     drag.current = null;
@@ -85,7 +91,7 @@ export function CameraWindow({
           </button>
         </div>
 
-        <div className={`relative h-[132px] w-[232px] bg-secondary ${minimized ? 'hidden' : ''}`}>
+        <div className={`relative h-[132px] w-[232px] bg-secondary ${minimized ? "hidden" : ""}`}>
           <video
             ref={videoRef}
             autoPlay
@@ -98,7 +104,12 @@ export function CameraWindow({
               {status === "error" ? (
                 <div className="space-y-2">
                   <p className="text-[11px] leading-snug text-destructive">{error}</p>
-                  <Button size="sm" variant="secondary" className="h-7 text-[11px]" onClick={onRetry}>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="h-7 text-[11px]"
+                    onClick={onRetry}
+                  >
                     <RefreshCw className="mr-1 h-3 w-3" /> Try again
                   </Button>
                 </div>
@@ -112,14 +123,20 @@ export function CameraWindow({
         <div className="flex items-center gap-2 border-t border-border px-3 py-2">
           <span
             className={`h-2 w-2 rounded-full ${
-              status === "live" && handVisible ? "bg-primary" : status === "error" ? "bg-destructive" : "bg-muted-foreground/50"
+              status === "live" && handVisible
+                ? "bg-primary"
+                : status === "error"
+                  ? "bg-destructive"
+                  : "bg-muted-foreground/50"
             }`}
           />
           <span className="truncate text-[11px] text-muted-foreground">
             {status === "live"
               ? gesture === "pointing" && pointingLabel
                 ? pointingLabel
-                : gestureLabel[gesture]
+                : gesture === "two-fingers" && twoFingerLabel
+                  ? twoFingerLabel
+                  : gestureLabel[gesture]
               : status === "error"
                 ? "Camera unavailable"
                 : "Connecting"}

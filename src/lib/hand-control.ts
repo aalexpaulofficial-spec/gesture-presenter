@@ -4,7 +4,13 @@
  */
 
 export type Landmark = { x: number; y: number; z: number };
-export type Gesture = "none" | "fist" | "open-palm-front" | "open-palm-back" | "pointing";
+export type Gesture =
+  | "none"
+  | "fist"
+  | "open-palm-front"
+  | "open-palm-back"
+  | "pointing"
+  | "two-fingers";
 
 const WRIST = 0;
 const INDEX_MCP = 5;
@@ -62,6 +68,10 @@ export function classifyGesture(lm: Landmark[], handedness: string): Gesture {
   // Index finger up, the rest curled -> laser pointer.
   if (index && !middle && !ring && !pinky) return "pointing";
 
+  // Index + middle up, ring and pinky curled -> two-finger gesture. Master Write
+  // uses this to open the eraser; slide navigation ignores it (see GestureGate).
+  if (index && middle && !ring && !pinky) return "two-fingers";
+
   // All fingers extended and fanned out -> open hand; orientation picks direction.
   if (index && middle && ring && pinky && spread > 0.55) {
     return palmFacesCamera(lm, handedness) ? "open-palm-front" : "open-palm-back";
@@ -91,6 +101,18 @@ export class PointSmoother {
   private px = 0;
   private py = 0;
   private started = false;
+  private readonly base: number;
+  private readonly gain: number;
+  private readonly max: number;
+
+  // Defaults reproduce the original laser feel exactly, so Master Hand / Master
+  // Voice are untouched. Master Write passes a higher base + gain so ink tracks
+  // the fingertip with far less lag (§4 low-latency requirement).
+  constructor(base = 0.34, gain = 9, max = 0.9) {
+    this.base = base;
+    this.gain = gain;
+    this.max = max;
+  }
 
   reset() {
     this.started = false;
@@ -104,7 +126,7 @@ export class PointSmoother {
       return { x, y };
     }
     const speed = Math.hypot(x - this.px, y - this.py);
-    const alpha = Math.min(0.9, 0.34 + speed * 9);
+    const alpha = Math.min(this.max, this.base + speed * this.gain);
     this.px += (x - this.px) * alpha;
     this.py += (y - this.py) * alpha;
     return { x: this.px, y: this.py };
@@ -139,7 +161,7 @@ export class GestureGate {
       this.armed = true;
       return null;
     }
-    if (gesture === "none" || gesture === "pointing") return null;
+    if (gesture === "none" || gesture === "pointing" || gesture === "two-fingers") return null;
     if (!this.armed || this.stable < this.framesRequired) return null;
     if (now - this.firedAt < this.cooldownMs) return null;
 
@@ -155,4 +177,5 @@ export const gestureLabel: Record<Gesture, string> = {
   "open-palm-front": "Front palm — next slide",
   "open-palm-back": "Back palm — previous slide",
   pointing: "Index finger — laser",
+  "two-fingers": "Two fingers",
 };

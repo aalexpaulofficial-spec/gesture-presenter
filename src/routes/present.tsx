@@ -28,7 +28,7 @@ import { useVoiceControl, VoiceHighlight } from "@/hooks/useVoiceControl";
 import {
   ERASER_RADIUS,
   eraseFromStrokes,
-  type ActiveWritingTool,
+  type WritingColor,
   type WritingPoint,
   type WritingStroke,
 } from "@/lib/writing";
@@ -166,7 +166,7 @@ function PresentPage() {
   const [metadata, setMetadata] = useState<any[] | null>(null);
   const [highlights, setHighlights] = useState<VoiceHighlight[]>([]);
   const [writingBySlide, setWritingBySlide] = useState<Record<number, WritingStroke[]>>({});
-  const [activeWritingTool, setActiveWritingTool] = useState<ActiveWritingTool>("color-0");
+  const [activeWritingColor, setActiveWritingColor] = useState<WritingColor>("color-0");
   const capabilities = capabilitiesForPlan(planName);
 
   const slideCountRef = useRef(slideCount);
@@ -225,17 +225,17 @@ function PresentPage() {
     [index],
   );
 
-  const selectWritingTool = useCallback((tool: ActiveWritingTool) => {
-    setActiveWritingTool(tool);
+  const selectWritingColor = useCallback((color: WritingColor) => {
+    setActiveWritingColor(color);
   }, []);
 
   // The camera loop feeds fingertip samples straight into the WritingLayer,
   // which owns the palette, gesture machine and canvas. The index finger never
-  // reaches the laser in Master Write (§12).
+  // reaches the laser in Master Write (§12); index + middle drives the eraser.
   const handleIndexPoint = useCallback(
     (point: IndexFingerPoint | null) => {
       if (!capabilities.writing) return;
-      writeTickRef.current?.(point ? point.slide : null);
+      writeTickRef.current?.(point ? { point: point.slide, gesture: point.mode } : null);
     },
     [capabilities.writing],
   );
@@ -620,9 +620,9 @@ function PresentPage() {
                     <WritingLayer
                       strokes={writingBySlide[index] ?? []}
                       slideIndex={index}
-                      tool={activeWritingTool}
+                      color={activeWritingColor}
                       tickRef={writeTickRef}
-                      onSelectTool={selectWritingTool}
+                      onSelectColor={selectWritingColor}
                       onClearAll={clearWriting}
                       onCommitStroke={commitStroke}
                       onErase={eraseAt}
@@ -710,6 +710,7 @@ function PresentPage() {
           handVisible={handVisible}
           hidden={isFullscreen}
           pointingLabel={capabilities.writing ? "Index finger — writing" : undefined}
+          twoFingerLabel={capabilities.writing ? "Index + middle — eraser" : undefined}
           onRetry={retry}
         />
       )}
@@ -727,6 +728,9 @@ function HowToControl({ planName }: { planName: string }) {
     capabilities.writing
       ? { icon: "Draw", cmd: "Raised Index Finger", desc: "Write on the slide" }
       : { icon: "Point", cmd: "Raised Index Finger", desc: "Laser Pointer" },
+    ...(capabilities.writing
+      ? [{ icon: "Erase", cmd: "Index + Middle Finger", desc: "Open eraser controls" }]
+      : []),
   ];
 
   return (
@@ -815,14 +819,14 @@ function HowToControl({ planName }: { planName: string }) {
             </p>
             <ol className="space-y-2.5 text-sm">
               {[
-                "Raise your index finger to open the palette — 5 colors, Clear All, and the manual eraser.",
-                "Hold your fingertip on a color to select it; the palette then closes and that color is armed.",
+                "Raise your index finger to open the color palette — exactly 5 colors.",
+                "Hold your fingertip on a color to pick it; the palette closes and that color is armed.",
                 "Move your index finger across the slide to write in real time, right under your fingertip.",
-                "Lower your index finger to stop — the current stroke ends cleanly.",
-                "Raise your index finger again to keep writing; hold it up for a moment to bring the palette back.",
-                "Pick the manual eraser, then move over your marks to rub out only what the fingertip passes over.",
-                "Pick Clear All to remove every mark from the current slide at once.",
-                "Writing is kept separately for each slide for the whole session.",
+                "Lower your index finger to stop — the stroke ends cleanly; raise it again to keep writing.",
+                "Raise your index AND middle fingers together to open the eraser controls: Manual Eraser and Erase All.",
+                "Pick Manual Eraser, then move your fingertip over your marks to rub out only what it passes over.",
+                "Pick Erase All to remove every mark from the current slide at once.",
+                "Writing is kept separately for each slide for the whole session; your PPT is never modified.",
               ].map((step, stepIndex) => (
                 <li key={stepIndex} className="flex items-start gap-3">
                   <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full border border-border bg-secondary font-mono text-[11px] text-foreground">

@@ -4,6 +4,11 @@
  * Nothing in this file touches React, the DOM or the camera, so the gesture
  * state machine, the geometry helpers and the eraser can all be exercised
  * without a browser. See scripts/writing-gestures.test.ts.
+ *
+ * Gesture split (§2 §6 §10):
+ *   • index finger only      → colour palette, then writing
+ *   • index + middle finger  → eraser controls (Manual Eraser / Erase All)
+ * There is no laser here, ever (§12).
  */
 
 export type WritingPoint = { x: number; y: number };
@@ -15,35 +20,29 @@ export type WritingStroke = {
   points: WritingPoint[];
 };
 
-/** The palette is exactly five colours plus the two eraser tools. */
-export type WritingTool =
-  | "color-0"
-  | "color-1"
-  | "color-2"
-  | "color-3"
-  | "color-4"
-  | "manual-eraser"
-  | "clear-all";
+/** The five writing colours. */
+export type WritingColor = "color-0" | "color-1" | "color-2" | "color-3" | "color-4";
 
-/** "clear-all" runs once when it is picked and is never left armed. */
-export type ActiveWritingTool = Exclude<WritingTool, "clear-all">;
+/** Everything the two menus can offer: the five colours plus the two eraser tools. */
+export type WriteMenuItem = WritingColor | "manual-eraser" | "clear-all";
 
-/** Red, blue, green, yellow, white — the five writing colours. */
+/** Red, blue, green, yellow, white — the five writing colours (§2). */
 export const WRITING_COLORS = ["#ef4444", "#2563eb", "#16a34a", "#eab308", "#ffffff"] as const;
 
-/** Palette order: the five colours, then Clear All, then the manual eraser. */
-export const WRITING_TOOL_ORDER: readonly WritingTool[] = [
+/** The colour palette shown for the index-only gesture. */
+export const WRITING_COLOR_ORDER: readonly WritingColor[] = [
   "color-0",
   "color-1",
   "color-2",
   "color-3",
   "color-4",
-  "clear-all",
-  "manual-eraser",
 ];
 
-export function toolColor(tool: ActiveWritingTool): string {
-  return WRITING_COLORS[Number(tool.slice("color-".length))] ?? WRITING_COLORS[0];
+/** The eraser controls shown for the index + middle gesture: Manual Eraser, then Erase All. */
+export const ERASER_MENU_ITEMS: readonly WriteMenuItem[] = ["manual-eraser", "clear-all"];
+
+export function colorValue(color: WritingColor): string {
+  return WRITING_COLORS[Number(color.slice("color-".length))] ?? WRITING_COLORS[0];
 }
 
 /** How far the manual eraser reaches, in slide-space units. */
@@ -140,56 +139,71 @@ export function eraseFromStrokes(
  * -------------------------------------------------------------------------- */
 
 /**
- * IDLE          index finger down / no hand — nothing is drawn
- * INDEX_RAISED  finger up, palette offered, still nothing is drawn
- * TOOL_SELECT   fingertip resting on a palette tool
- * WRITING       fingertip movement extends a stroke
- * ERASING       fingertip movement rubs annotations out
+ * idle         no writing/eraser gesture — nothing happens
+ * color_menu   index up, colour palette offered, nothing drawn yet (§2)
+ * writing      index moving — a stroke is being drawn (§4)
+ * eraser_menu  index + middle up, eraser controls offered (§6)
+ * erasing      manual eraser active — fingertip rubs marks out (§7)
+ * eraser_idle  Erase All has run; index + middle still up but idle (§8)
  */
-export type WriteState = "idle" | "index_raised" | "tool_select" | "writing" | "erasing";
+export type WriteState =
+  | "idle"
+  | "color_menu"
+  | "writing"
+  | "eraser_menu"
+  | "erasing"
+  | "eraser_idle";
+
+/** Which hand gesture is driving this frame. */
+export type WriteGesture = "none" | "index" | "eraser";
 
 export type WriteSample = {
-  /** Fingertip in slide space, or null when the index finger is not raised. */
+  /** The gesture the hand is making: index only, index + middle, or neither. */
+  gesture: WriteGesture;
+  /** Index fingertip in slide space, or null when neither gesture is active. */
   point: WritingPoint | null;
-  /** True while the fingertip sits inside the open palette. */
-  overPalette: boolean;
-  /** The palette tool directly under the fingertip, when the palette is open. */
-  hit: WritingTool | null;
-  /** The tool that is armed right now. */
-  tool: ActiveWritingTool;
+  /** True while the fingertip sits inside the open menu. */
+  overMenu: boolean;
+  /** The menu item directly under the fingertip, when a menu is open. */
+  hit: WriteMenuItem | null;
   now: number;
 };
 
 export type WriteEffect =
-  | { kind: "select"; tool: ActiveWritingTool }
+  | { kind: "select-color"; color: WritingColor }
   | { kind: "clear" }
   | { kind: "begin"; point: WritingPoint }
   | { kind: "extend"; point: WritingPoint }
   | { kind: "erase"; point: WritingPoint }
   | { kind: "end" };
 
+/** How the fingertip cursor should look for the current mode. */
+export type CursorMode = "pen" | "eraser" | "select" | null;
+
 export type WriteFrame = {
   state: WriteState;
-  paletteOpen: boolean;
-  hovered: WritingTool | null;
-  /** Dwell progress on the hovered tool, 0..1. */
+  colorMenuOpen: boolean;
+  eraserMenuOpen: boolean;
+  hovered: WriteMenuItem | null;
+  /** Dwell progress on the hovered item, 0..1. */
   dwell: number;
   cursor: WritingPoint | null;
+  cursorMode: CursorMode;
   effects: WriteEffect[];
 };
 
 export const WRITE_TIMINGS = {
-  /** Fingertip rest needed to pick a tool. */
+  /** Fingertip rest needed to pick a menu item. */
   dwellMs: 520,
-  /** How long the palette waits to be used before the pen takes over. */
+  /** How long the colour palette waits to be used before the pen takes over. */
   paletteMs: 900,
-  /** Lifting and lowering again inside this window just carries on writing. */
+  /** Lowering and raising again inside this window just carries on. */
   resumeMs: 900,
   /** A tracking blink shorter than this never breaks a stroke. */
   lostMs: 160,
   /** Ignore fingertip noise below this distance. */
   minStep: 0.002,
-  /** Travel needed after picking a tool before ink starts. */
+  /** Travel needed after picking a tool before ink or erasing starts. */
   escapeDist: 0.05,
   /** A jump wider than this starts a new stroke instead of a long straight line. */
   rejoinDist: 0.08,
@@ -198,20 +212,22 @@ export const WRITE_TIMINGS = {
 export type WriteTimings = typeof WRITE_TIMINGS;
 
 /**
- * Turns the raised-index-finger stream into palette, writing and erasing
- * decisions. Call `update` once per camera frame; every side effect is returned
- * instead of performed, which keeps the machine testable.
+ * Turns the index / index+middle fingertip stream into palette, writing and
+ * erasing decisions. Call `update` once per camera frame; every side effect is
+ * returned instead of performed, which keeps the machine testable.
  */
 export class WriteGestureMachine {
   private state: WriteState = "idle";
-  private paletteOpen = false;
-  private paletteDeadline = 0;
-  private hovered: WritingTool | null = null;
+  private colorMenuOpen = false;
+  private eraserMenuOpen = false;
+  private menuDeadline = 0;
+  private hovered: WriteMenuItem | null = null;
   private hoverStart = 0;
   private lostAt = 0;
   private strokeOpen = false;
   private lastPoint: WritingPoint | null = null;
-  private lastEndAt = 0;
+  private lastWriteEndAt = 0;
+  private lastEraseEndAt = 0;
   private escapeFrom: WritingPoint | null = null;
   private now = 0;
   private readonly timings: WriteTimings;
@@ -222,53 +238,55 @@ export class WriteGestureMachine {
     this.timings = timings;
   }
 
-  /** Drops anything in flight — used when the slide changes. */
+  /** Drops anything in flight — used when the slide changes (§17). */
   reset(): void {
     this.state = "idle";
-    this.paletteOpen = false;
-    this.paletteDeadline = 0;
+    this.colorMenuOpen = false;
+    this.eraserMenuOpen = false;
+    this.menuDeadline = 0;
     this.hovered = null;
     this.hoverStart = 0;
     this.lostAt = 0;
     this.strokeOpen = false;
     this.lastPoint = null;
-    this.lastEndAt = 0;
+    this.lastWriteEndAt = 0;
+    this.lastEraseEndAt = 0;
     this.escapeFrom = null;
   }
 
-  update(sample: WriteSample): WriteFrame {
+    update(sample: WriteSample): WriteFrame {
     const effects: WriteEffect[] = [];
     this.now = sample.now;
 
-    if (!sample.point) return this.handleIndexDown(effects, sample.now);
+    if (sample.gesture === "none" || !sample.point) {
+      return this.handleRelease(effects, sample.now);
+    }
 
     this.lostAt = 0;
-    if (this.state === "idle") this.handleRaise(sample);
-    if (this.paletteOpen) {
-      const settled = this.handlePalette(sample, effects);
-      if (settled) return settled;
-    }
-    return this.handleDrawing(sample, effects);
+    if (sample.gesture === "eraser") return this.handleEraser(sample, effects);
+    return this.handleIndex(sample, effects);
   }
 
-  /** Index finger lowered, neutral, or tracking lost. */
-  private handleIndexDown(effects: WriteEffect[], now: number): WriteFrame {
-    // A tracking blink must not chop one movement into two strokes.
+  /** Neither gesture is active (hand down, fist, palm, or tracking lost). */
+  private handleRelease(effects: WriteEffect[], now: number): WriteFrame {
+    // A tracking blink must not chop one movement into two strokes (§5).
     if (this.strokeOpen) {
       if (this.lostAt === 0) this.lostAt = now;
-      if (now - this.lostAt <= this.timings.lostMs) {
-        this.paletteOpen = false;
-        return this.frame(effects, null);
-      }
+      if (now - this.lostAt <= this.timings.lostMs) return this.frame(effects, null);
       effects.push({ kind: "end" });
       this.strokeOpen = false;
-      this.lastEndAt = now;
-    } else if (this.state === "writing" || this.state === "erasing") {
-      this.lastEndAt = now;
+      this.lastWriteEndAt = now;
+    } else if (this.state === "writing") {
+      this.lastWriteEndAt = now;
+    } else if (this.state === "erasing") {
+      if (this.lostAt === 0) this.lostAt = now;
+      if (now - this.lostAt <= this.timings.lostMs) return this.frame(effects, null);
+      this.lastEraseEndAt = now;
     }
 
     this.state = "idle";
-    this.paletteOpen = false;
+    this.colorMenuOpen = false;
+    this.eraserMenuOpen = false;
     this.hovered = null;
     this.hoverStart = 0;
     this.lastPoint = null;
@@ -277,110 +295,93 @@ export class WriteGestureMachine {
     return this.frame(effects, null);
   }
 
-  /** The index finger has just come up out of idle. */
-  private handleRaise(sample: WriteSample): void {
-    // Lifting the finger for a beat and putting it straight back down carries on
-    // writing; a real pause offers the palette again.
-    const resuming =
-      this.lastEndAt > 0 && sample.now - this.lastEndAt <= this.timings.resumeMs;
+    /* ----- index-only: colour palette then writing ------------------------- */
 
-    this.paletteOpen = !resuming;
-    this.paletteDeadline = sample.now + this.timings.paletteMs;
+  private handleIndex(sample: WriteSample, effects: WriteEffect[]): WriteFrame {
+    const point = sample.point;
+    if (!point) return this.frame(effects, null);
+
+    if (this.state !== "color_menu" && this.state !== "writing") this.enterIndex(sample);
+
+    if (this.colorMenuOpen) {
+      const settled = this.handleColorMenu(sample, effects, point);
+      if (settled) return settled;
+    }
+    return this.handleWrite(effects, point);
+  }
+
+  private enterIndex(sample: WriteSample): void {
+    // Lowering the finger for a beat and raising it carries on writing; a real
+    // pause offers the palette again (§5 §15).
+    const resuming =
+      this.lastWriteEndAt > 0 && sample.now - this.lastWriteEndAt <= this.timings.resumeMs;
+    this.colorMenuOpen = !resuming;
+    this.eraserMenuOpen = false;
+    this.menuDeadline = sample.now + this.timings.paletteMs;
     this.hovered = null;
     this.hoverStart = 0;
     this.escapeFrom = null;
     this.lastPoint = null;
     this.strokeOpen = false;
-    this.state = this.paletteOpen ? "index_raised" : this.drawState(sample.tool);
+    this.state = this.colorMenuOpen ? "color_menu" : "writing";
   }
 
-  /**
-   * Runs while the palette is open. Returns a frame when the palette has taken
-   * charge of this sample, or null to let the pen have it.
-   */
-  private handlePalette(sample: WriteSample, effects: WriteEffect[]): WriteFrame | null {
-    const point = sample.point;
-    if (!point) return null;
+    /** Colour palette. Returns a frame once it owns the sample, or null for the pen. */
+  private handleColorMenu(
+    sample: WriteSample,
+    effects: WriteEffect[],
+    point: WritingPoint,
+  ): WriteFrame | null {
     const now = sample.now;
-
     // Reaching the palette gives the presenter as long as they need.
-    if (sample.overPalette) this.paletteDeadline = now + this.timings.paletteMs;
+    if (sample.overMenu) this.menuDeadline = now + this.timings.paletteMs;
 
     const hit = sample.hit;
-    if (hit) {
-      this.state = "tool_select";
+    if (hit && isColor(hit)) {
       if (this.hovered !== hit) {
         this.hovered = hit;
         this.hoverStart = now;
       }
-      // Still resting — report dwell progress and wait.
-      if (now - this.hoverStart < this.timings.dwellMs) return this.frame(effects, point);
+      if (now - this.hoverStart < this.timings.dwellMs) return this.frame(effects, point, "select");
 
-      if (hit === "clear-all") {
-        effects.push({ kind: "clear" });
-        this.state = this.drawState(sample.tool);
-      } else {
-        effects.push({ kind: "select", tool: hit });
-        this.state = this.drawState(hit);
-      }
-      this.paletteOpen = false;
+      effects.push({ kind: "select-color", color: hit });
+      this.colorMenuOpen = false;
       this.hovered = null;
       this.hoverStart = 0;
       this.lastPoint = null;
       this.strokeOpen = false;
-      // Never leave a mark where the palette just was.
-      this.escapeFrom = point;
-      return this.frame(effects, point);
+      this.escapeFrom = point; // never leave a mark where the palette just was
+      this.state = "writing";
+      return this.frame(effects, point, "pen");
     }
 
     this.hovered = null;
     this.hoverStart = 0;
-    if (now < this.paletteDeadline) {
-      this.state = "index_raised";
-      return this.frame(effects, point);
+    if (now < this.menuDeadline) {
+      this.state = "color_menu";
+      return this.frame(effects, point, "select");
     }
-
-    // Offered and unused — the armed tool takes over.
-    this.paletteOpen = false;
+    // Offered and unused — the pen takes over with the armed colour (§4).
+    this.colorMenuOpen = false;
     this.lastPoint = null;
-    this.state = this.drawState(sample.tool);
+    this.state = "writing";
     return null;
   }
 
-  /** Ink and eraser movement. */
-  private handleDrawing(sample: WriteSample, effects: WriteEffect[]): WriteFrame {
-    const point = sample.point;
-    if (!point) return this.frame(effects, null);
-
-    // Switching tool mid-stroke (palette or mouse) closes the old line first.
-    const wanted = this.drawState(sample.tool);
-    if (this.state !== wanted) {
-      if (this.strokeOpen) {
-        effects.push({ kind: "end" });
-        this.strokeOpen = false;
-      }
-      this.state = wanted;
-      this.lastPoint = null;
-    }
-
+    /** Ink movement (§4 §18). */
+  private handleWrite(effects: WriteEffect[], point: WritingPoint): WriteFrame {
     // Hold the ink back until the fingertip has left the tool it just picked.
     if (this.escapeFrom) {
       const away = Math.hypot(point.x - this.escapeFrom.x, point.y - this.escapeFrom.y);
-      if (away < this.timings.escapeDist) return this.frame(effects, point);
+      if (away < this.timings.escapeDist) return this.frame(effects, point, "pen");
       this.escapeFrom = null;
-    }
-
-    if (this.state === "erasing") {
-      effects.push({ kind: "erase", point });
-      this.lastPoint = point;
-      return this.frame(effects, point);
     }
 
     if (!this.strokeOpen) {
       effects.push({ kind: "begin", point });
       this.strokeOpen = true;
       this.lastPoint = point;
-      return this.frame(effects, point);
+      return this.frame(effects, point, "pen");
     }
 
     const previous = this.lastPoint;
@@ -390,35 +391,133 @@ export class WriteGestureMachine {
       if (moved > this.timings.rejoinDist) {
         effects.push({ kind: "end" }, { kind: "begin", point });
         this.lastPoint = point;
-        return this.frame(effects, point);
+        return this.frame(effects, point, "pen");
       }
-      if (moved < this.timings.minStep) return this.frame(effects, point);
+      if (moved < this.timings.minStep) return this.frame(effects, point, "pen");
     }
 
     effects.push({ kind: "extend", point });
     this.lastPoint = point;
-    return this.frame(effects, point);
+    return this.frame(effects, point, "pen");
   }
 
-  /** The armed tool decides whether movement writes or erases. */
-  private drawState(tool: ActiveWritingTool): WriteState {
-    return tool === "manual-eraser" ? "erasing" : "writing";
+    /* ----- index + middle: eraser controls then erasing -------------------- */
+
+  private handleEraser(sample: WriteSample, effects: WriteEffect[]): WriteFrame {
+    const point = sample.point;
+    if (!point) return this.frame(effects, null);
+
+    if (this.state !== "eraser_menu" && this.state !== "erasing" && this.state !== "eraser_idle") {
+      this.enterEraser(sample, effects);
+    }
+
+    if (this.eraserMenuOpen) {
+      const settled = this.handleEraserMenu(sample, effects, point);
+      if (settled) return settled;
+    }
+
+    if (this.state === "erasing") {
+      if (this.escapeFrom) {
+        const away = Math.hypot(point.x - this.escapeFrom.x, point.y - this.escapeFrom.y);
+        if (away < this.timings.escapeDist) return this.frame(effects, point, "eraser");
+        this.escapeFrom = null;
+      }
+      effects.push({ kind: "erase", point });
+      this.lastPoint = point;
+      return this.frame(effects, point, "eraser");
+    }
+
+    // eraser_idle after Erase All — do nothing until the fingers drop (§8).
+    return this.frame(effects, point, null);
   }
 
-  /** Packages the public snapshot, including live dwell progress. */
-  private frame(effects: WriteEffect[], cursor: WritingPoint | null): WriteFrame {
+    private enterEraser(sample: WriteSample, effects: WriteEffect[]): void {
+    // Switching gesture mid-stroke closes the open line first.
+    if (this.strokeOpen) {
+      effects.push({ kind: "end" });
+      this.strokeOpen = false;
+      this.lastWriteEndAt = sample.now;
+    } else if (this.state === "writing") {
+      this.lastWriteEndAt = sample.now;
+    }
+    // Lifting the fingers briefly and raising them again keeps erasing (§5).
+    const resuming =
+      this.lastEraseEndAt > 0 && sample.now - this.lastEraseEndAt <= this.timings.resumeMs;
+    this.eraserMenuOpen = !resuming;
+    this.colorMenuOpen = false;
+    this.hovered = null;
+    this.hoverStart = 0;
+    this.lastPoint = null;
+    this.escapeFrom = null;
+    this.state = resuming ? "erasing" : "eraser_menu";
+  }
+
+    /** Eraser controls. Returns a frame once it owns the sample (never auto-erases). */
+  private handleEraserMenu(
+    sample: WriteSample,
+    effects: WriteEffect[],
+    point: WritingPoint,
+  ): WriteFrame | null {
+    const now = sample.now;
+    const hit = sample.hit;
+    if (hit === "manual-eraser" || hit === "clear-all") {
+      if (this.hovered !== hit) {
+        this.hovered = hit;
+        this.hoverStart = now;
+      }
+      if (now - this.hoverStart < this.timings.dwellMs) return this.frame(effects, point, "select");
+
+      if (hit === "clear-all") {
+        effects.push({ kind: "clear" });
+        this.eraserMenuOpen = false;
+        this.hovered = null;
+        this.hoverStart = 0;
+        this.lastPoint = null;
+        this.state = "eraser_idle";
+        return this.frame(effects, point, null);
+      }
+      // Manual eraser armed — start erasing, but not where the menu just was.
+      this.eraserMenuOpen = false;
+      this.hovered = null;
+      this.hoverStart = 0;
+      this.lastPoint = null;
+      this.escapeFrom = point;
+      this.state = "erasing";
+      return this.frame(effects, point, "eraser");
+    }
+
+    // Resting on nothing — keep the controls up and safe (never auto-erase).
+    this.hovered = null;
+    this.hoverStart = 0;
+    this.state = "eraser_menu";
+    return this.frame(effects, point, "select");
+  }
+
+    /** Packages the public snapshot, including live dwell progress. */
+  private frame(
+    effects: WriteEffect[],
+    cursor: WritingPoint | null,
+    cursorMode: CursorMode = null,
+  ): WriteFrame {
+    const menuOpen = this.colorMenuOpen || this.eraserMenuOpen;
     let dwell = 0;
-    if (this.paletteOpen && this.hovered && this.hoverStart > 0) {
+    if (menuOpen && this.hovered && this.hoverStart > 0) {
       dwell = Math.max(0, Math.min(1, (this.now - this.hoverStart) / this.timings.dwellMs));
     }
     return {
       state: this.state,
-      paletteOpen: this.paletteOpen,
-      hovered: this.paletteOpen ? this.hovered : null,
+      colorMenuOpen: this.colorMenuOpen,
+      eraserMenuOpen: this.eraserMenuOpen,
+      hovered: menuOpen ? this.hovered : null,
       dwell,
       cursor,
+      cursorMode: cursor ? cursorMode : null,
       effects,
     };
   }
 }
 
+/** The five colours are the only items that live in the colour palette. */
+function isColor(item: WriteMenuItem): item is WritingColor {
+  return item !== "manual-eraser" && item !== "clear-all";
+}
