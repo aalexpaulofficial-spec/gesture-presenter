@@ -256,98 +256,25 @@ function Landing() {
             id="modal-install-app-btn"
             size="lg"
             onClick={handleModalInstall}
-            className="mt-3 w-full rounded-xl py-5 text-sm font-semibold shadow-soft"
+            className="mt-4 w-full rounded-xl py-6 text-base font-semibold shadow-soft"
           >
-            <Download className="mr-2 h-4 w-4" /> Download & Install App
+            <Download className="mr-2 h-5 w-5" /> Download & Install App
           </Button>
 
-          <DialogHeader className="text-left mt-3">
-            <DialogTitle className="font-display text-base">Installation Guide for Your Device</DialogTitle>
-            <DialogDescription className="text-xs text-muted-foreground">
-              Follow the quick steps below to add Master Presenter to your device:
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="mt-2 space-y-3 text-sm text-muted-foreground">
-            {platform === "ios" ? (
-              <div className="rounded-xl border border-border bg-card p-4 space-y-2">
-                <p className="font-semibold text-foreground">On iPhone & iPad (Safari):</p>
-                <ol className="list-decimal list-inside space-y-1.5 text-xs leading-relaxed">
-                  <li>
-                    Tap the <strong>Share</strong> button (box with an arrow ⎋) in Safari’s toolbar.
-                  </li>
-                  <li>
-                    Scroll down and tap <strong>Add to Home Screen</strong> (+).
-                  </li>
-                  <li>
-                    Tap <strong>Add</strong> in the top right corner. The Master Presenter app icon will appear on your screen.
-                  </li>
-                </ol>
-              </div>
-            ) : platform === "android" ? (
-              <div className="rounded-xl border border-border bg-card p-4 space-y-2">
-                <p className="font-semibold text-foreground">
-                  On Android (Chrome / Edge / Firefox):
-                </p>
-                <ol className="list-decimal list-inside space-y-1.5 text-xs leading-relaxed">
-                  <li>
-                    Tap the browser menu icon (<strong>⋮</strong>) in the top-right corner.
-                  </li>
-                  <li>
-                    Select <strong>Install app</strong> or <strong>Add to Home screen</strong>.
-                  </li>
-                  <li>
-                    Confirm by tapping <strong>Install</strong>.
-                  </li>
-                </ol>
-              </div>
-            ) : platform === "mac_safari" ? (
-              <div className="rounded-xl border border-border bg-card p-4 space-y-2">
-                <p className="font-semibold text-foreground">On Mac (Safari):</p>
-                <ol className="list-decimal list-inside space-y-1.5 text-xs leading-relaxed">
-                  <li>
-                    In the top menu bar, click <strong>File</strong>.
-                  </li>
-                  <li>
-                    Select <strong>Add to Dock...</strong>, then click <strong>Add</strong>.
-                  </li>
-                </ol>
-              </div>
-            ) : (
-              <div className="rounded-xl border border-border bg-card p-4 space-y-2">
-                <p className="font-semibold text-foreground">
-                  On Desktop / Laptop (Chrome / Edge / Windows / Mac):
-                </p>
-                <ol className="list-decimal list-inside space-y-1.5 text-xs leading-relaxed">
-                  <li>
-                    Click the <strong>Install</strong> icon in the address bar (on the right side).
-                  </li>
-                  <li>
-                    Or click the browser menu (<strong>⋮</strong>) → <strong>Save and share</strong>{" "}
-                    → <strong>Install Master Presenter</strong>.
-                  </li>
-                  <li>
-                    Click <strong>Install</strong> to add it to your desktop and apps menu.
-                  </li>
-                </ol>
-              </div>
-            )}
-
-            {/* Offline Capability Box */}
-            <div className="flex items-center gap-3.5 rounded-xl border border-primary/20 bg-primary/5 p-3">
-              <div className="shrink-0 rounded-lg border border-border/70 bg-white p-1 shadow-xs">
-                <img
-                  src="/MASTER PRESENTER OFFICIAL LOGO WITH BG.png"
-                  alt="Master Presenter Official"
-                  className="h-10 w-10 object-contain"
-                />
-              </div>
-              <div className="text-left">
-                <p className="text-xs font-semibold text-foreground">Works Completely Offline</p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">
-                  Present slides with hand and voice control anywhere, even without internet access.
-                </p>
-              </div>
+          {/* Works Completely Offline Section */}
+          <div className="mt-4 flex items-center gap-3.5 rounded-xl border border-primary/20 bg-primary/5 p-3.5">
+            <div className="shrink-0 rounded-lg border border-border/70 bg-white p-1.5 shadow-xs">
+              <img
+                src="/MASTER PRESENTER OFFICIAL LOGO WITH BG.png"
+                alt="Master Presenter Official"
+                className="h-10 w-10 object-contain"
+              />
+            </div>
+            <div className="text-left">
+              <p className="text-sm font-semibold text-foreground">Works Completely Offline</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Present slides with hand and voice control anywhere on phone, tablet, and laptop, even without internet access.
+              </p>
             </div>
           </div>
 
