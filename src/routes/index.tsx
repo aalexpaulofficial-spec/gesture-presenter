@@ -74,23 +74,68 @@ function Landing() {
   const { isInstalled, platform, triggerInstall, markAsInstalled } = usePWAInstall();
   const [alreadyInstalledOpen, setAlreadyInstalledOpen] = useState(false);
   const [instructionModalOpen, setInstructionModalOpen] = useState(false);
+  const [installing, setInstalling] = useState(false);
 
   async function handleDownload() {
-    const result = await triggerInstall();
-    if (result === "already_installed") {
-      setAlreadyInstalledOpen(true);
-    } else if (result === "installed") {
-      setAlreadyInstalledOpen(true);
-    } else if (result === "show_instructions") {
-      setInstructionModalOpen(true);
+    setInstalling(true);
+    try {
+      const result = await triggerInstall();
+      if (result === "already_installed") {
+        setAlreadyInstalledOpen(true);
+      } else if (result === "installed") {
+        setAlreadyInstalledOpen(true);
+      } else if (result === "show_instructions") {
+        // Try Web Share API first (works on iOS to trigger Add to Home Screen)
+        if (typeof navigator !== "undefined" && navigator.share) {
+          try {
+            await navigator.share({
+              title: "Master Presenter",
+              text: "Control your presentation with hand gestures — free, offline app.",
+              url: window.location.origin,
+            });
+            return;
+          } catch {
+            // User dismissed share sheet or share failed — fall through to modal
+          }
+        }
+        setInstructionModalOpen(true);
+      }
+    } finally {
+      setInstalling(false);
     }
   }
 
   async function handleModalInstall() {
-    const result = await triggerInstall();
-    if (result === "installed" || result === "already_installed") {
-      setInstructionModalOpen(false);
-      setAlreadyInstalledOpen(true);
+    setInstalling(true);
+    try {
+      const result = await triggerInstall();
+      if (result === "installed" || result === "already_installed") {
+        setInstructionModalOpen(false);
+        setAlreadyInstalledOpen(true);
+        return;
+      }
+      // No native prompt available (iOS Safari, Firefox, etc.) — use Web Share API
+      // which lets users tap "Add to Home Screen" from the native share sheet
+      if (result === "show_instructions") {
+        if (typeof navigator !== "undefined" && navigator.share) {
+          try {
+            await navigator.share({
+              title: "Master Presenter",
+              text: "Control your presentation with hand gestures — free, offline app.",
+              url: window.location.origin,
+            });
+            return;
+          } catch {
+            // User dismissed — that's fine
+          }
+        } else {
+          // Desktop browser without share API: close modal and let user
+          // install via the browser address bar install icon
+          setInstructionModalOpen(false);
+        }
+      }
+    } finally {
+      setInstalling(false);
     }
   }
 
@@ -132,6 +177,7 @@ function Landing() {
                 id="header-free-download-btn"
                 size="sm"
                 variant="outline"
+                disabled={installing}
                 className="hidden rounded-full px-4 sm:flex"
                 onClick={handleDownload}
               >
@@ -256,9 +302,20 @@ function Landing() {
             id="modal-install-app-btn"
             size="lg"
             onClick={handleModalInstall}
+            disabled={installing}
             className="mt-4 w-full rounded-xl py-6 text-base font-semibold shadow-soft"
           >
-            <Download className="mr-2 h-5 w-5" /> Download & Install App
+            {installing ? (
+              <>
+                <svg className="mr-2 h-5 w-5 animate-spin" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                </svg>
+                Installing…
+              </>
+            ) : (
+              <><Download className="mr-2 h-5 w-5" /> Download & Install App</>
+            )}
           </Button>
 
           {/* Works Completely Offline Section */}
