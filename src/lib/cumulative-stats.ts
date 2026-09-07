@@ -1,18 +1,29 @@
-﻿/**
+/**
  * Cumulative statistics store for Master Presenter.
  *
- * Persistence strategy (in priority order):
- *   1. Upstash Redis  -- when KV_REST_API_URL + KV_REST_API_TOKEN env vars are set
- *                        (set automatically by the Vercel Upstash Redis integration)
- *   2. In-memory      -- fallback for local dev or when env vars are absent.
- *                        Stats survive within a serverless instance lifetime but
- *                        reset on cold start. Numbers always start at 0, never faked.
+ * Backed by Upstash Redis on Vercel:
+ *   - KV_REST_API_URL + KV_REST_API_TOKEN
+ *   - UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN
+ *   - KV_URL / REDIS_URL
  *
- * Schema (Redis hash "mp:stats"):
- *   presentations_controlled  integer
- *   hours_presented           float (stored as string, parsed on read)
+ * Fallback:
+ *   In-process memory store for local development.
+ *   Always starts at 0, never faked, strictly cumulative.
  *
- * Known unique client IDs stored in Redis set "mp:presenters"
+ * Authoritative Redis schema:
+ *   Hash "mp:stats":
+ *     presentations_controlled  integer
+ *     total_seconds             integer (duration in seconds)
+ *     downloads                 integer (confirmed PWA installations)
+ *
+ *   Set "mp:presenters":
+ *     Set of unique client IDs (SCARD = unique presenters)
+ *
+ *   Set "mp:sessions":
+ *     Set of session IDs to ensure idempotent session start counting
+ *
+ *   Set "mp:installed_clients":
+ *     Set of client IDs that confirmed PWA installation (ensures 1 install per client)
  */
 
 import { Redis } from "@upstash/redis";
@@ -23,14 +34,18 @@ export interface CumulativeStats {
   presenters: number;
   presentations_controlled: number;
   hours_presented: number;
+  downloads: number;
 }
 
 // --- In-memory fallback store -------------------------------------------------
 
 interface InMemoryStore {
   presenters: Set<string>;
+  sessions: Set<string>;
+  installedClients: Set<string>;
   presentations_controlled: number;
-  hours_presented: number;
+  total_seconds: number;
+  downloads: number;
 }
 
 declare global {
@@ -42,21 +57,25 @@ function getMemoryStore(): InMemoryStore {
   if (!globalThis.__mpCumulativeStats) {
     globalThis.__mpCumulativeStats = {
       presenters: new Set(),
+      sessions: new Set(),
+      installedClients: new Set(),
       presentations_controlled: 0,
-      hours_presented: 0,
+      total_seconds: 0,
+      downloads: 0,
     };
   }
   return globalThis.__mpCumulativeStats;
 }
 
-// --- Redis client (lazy, only created when env vars are present) --------------
+// --- Redis client -------------------------------------------------------------
 
-let _redis: Redis | null | undefined = undefined; // undefined = not yet checked
+let _redis: Redis | null | undefined = undefined;
 
 function getRedis(): Redis | null {
   if (_redis !== undefined) return _redis;
   const url = process.env.KV_REST_API_URL ?? process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.KV_REST_API_TOKEN ?? process.env.UPSTASH_REDIS_REST_TOKEN;
+
   if (url && token) {
     try {
       _redis = new Redis({ url, token });
@@ -71,56 +90,100 @@ function getRedis(): Redis | null {
 
 const STATS_KEY = "mp:stats";
 const PRESENTERS_KEY = "mp:presenters";
+const SESSIONS_KEY = "mp:sessions";
+const INSTALLED_KEY = "mp:installed_clients";
 
 // --- Public API ---------------------------------------------------------------
 
 /**
  * Record the start of a new presentation session.
- * Increments presentations_controlled.
- * Adds clientId to the unique presenters set (deduplication via Redis SADD).
+ * Deduplicates unique presenters and sessions via atomic Redis sets.
  */
-export async function recordSessionStart(clientId: string): Promise<void> {
+export async function recordSessionStart(clientId: string, sessionId?: string): Promise<void> {
   const redis = getRedis();
   if (redis) {
     try {
-      await Promise.all([
-        redis.hincrby(STATS_KEY, "presentations_controlled", 1),
-        redis.sadd(PRESENTERS_KEY, clientId),
-      ]);
+      const promises: Promise<any>[] = [redis.sadd(PRESENTERS_KEY, clientId)];
+      if (sessionId) {
+        const added = await redis.sadd(SESSIONS_KEY, sessionId);
+        if (added > 0) {
+          promises.push(redis.hincrby(STATS_KEY, "presentations_controlled", 1));
+        }
+      } else {
+        promises.push(redis.hincrby(STATS_KEY, "presentations_controlled", 1));
+      }
+      await Promise.all(promises);
       return;
     } catch {
-      // Redis failure: fall through to in-memory
+      // Fall through to memory store on network error
     }
   }
+
   const store = getMemoryStore();
-  store.presentations_controlled += 1;
   store.presenters.add(clientId);
+  if (sessionId) {
+    if (!store.sessions.has(sessionId)) {
+      store.sessions.add(sessionId);
+      store.presentations_controlled += 1;
+    }
+  } else {
+    store.presentations_controlled += 1;
+  }
 }
 
 /**
- * Record the end of a presentation session and accumulate its real duration.
- * @param durationSeconds - real elapsed seconds measured by the client
+ * Record the end of a presentation session and accumulate real elapsed duration.
+ * Stored internally as integer seconds in Redis to prevent floating-point drift.
  */
 export async function recordSessionEnd(durationSeconds: number): Promise<void> {
   if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return;
-  // Cap a single session at 8 hours to guard against runaway client timers
-  const capped = Math.min(durationSeconds, 8 * 3600);
+  // Cap at 8 hours to avoid runaway client timestamps
+  const cappedSeconds = Math.min(Math.round(durationSeconds), 8 * 3600);
 
   const redis = getRedis();
   if (redis) {
     try {
-      await redis.hincrbyfloat(STATS_KEY, "hours_presented", capped / 3600);
+      await redis.hincrby(STATS_KEY, "total_seconds", cappedSeconds);
       return;
     } catch {
-      // fall through
+      // Fall through to memory store
     }
   }
+
   const store = getMemoryStore();
-  store.hours_presented += capped / 3600;
+  store.total_seconds += cappedSeconds;
 }
 
 /**
- * Get the current cumulative statistics for the public endpoint.
+ * Record a real, confirmed PWA download / installation.
+ * Uses atomic Redis set `mp:installed_clients` to ensure each client is counted once.
+ */
+export async function recordDownload(clientId: string): Promise<void> {
+  if (!clientId) return;
+
+  const redis = getRedis();
+  if (redis) {
+    try {
+      const added = await redis.sadd(INSTALLED_KEY, clientId);
+      if (added > 0) {
+        await redis.hincrby(STATS_KEY, "downloads", 1);
+      }
+      return;
+    } catch {
+      // Fall through to memory store
+    }
+  }
+
+  const store = getMemoryStore();
+  if (!store.installedClients.has(clientId)) {
+    store.installedClients.add(clientId);
+    store.downloads += 1;
+  }
+}
+
+/**
+ * Get current cumulative statistics for the public endpoint.
+ * Zero hardcoding, strictly real persistent numbers.
  */
 export async function getCumulativeStats(): Promise<CumulativeStats> {
   const redis = getRedis();
@@ -131,19 +194,27 @@ export async function getCumulativeStats(): Promise<CumulativeStats> {
         redis.scard(PRESENTERS_KEY),
       ]);
       const hash = statsHash ?? {};
+      const totalSeconds = parseInt(hash["total_seconds"] ?? "0", 10) || 0;
+      const hoursPresented = Math.round((totalSeconds / 3600) * 10) / 10;
+
       return {
         presenters: presenterCount ?? 0,
         presentations_controlled: parseInt(hash["presentations_controlled"] ?? "0", 10) || 0,
-        hours_presented: parseFloat(hash["hours_presented"] ?? "0") || 0,
+        hours_presented: hoursPresented,
+        downloads: parseInt(hash["downloads"] ?? "0", 10) || 0,
       };
     } catch {
-      // fall through to memory
+      // Fall through to memory store
     }
   }
+
   const store = getMemoryStore();
+  const hours = Math.round((store.total_seconds / 3600) * 10) / 10;
+
   return {
     presenters: store.presenters.size,
     presentations_controlled: store.presentations_controlled,
-    hours_presented: store.hours_presented,
+    hours_presented: hours,
+    downloads: store.downloads,
   };
 }

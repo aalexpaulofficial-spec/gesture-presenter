@@ -4,6 +4,7 @@ export interface CumulativeStats {
   presenters: number;
   presentations_controlled: number;
   hours_presented: number;
+  downloads: number;
 }
 
 export function useCumulativeStats(): CumulativeStats | null {
@@ -17,7 +18,7 @@ export function useCumulativeStats(): CumulativeStats | null {
         ? String(import.meta.env.VITE_PRESENTATION_API_URL).replace(/\/$/, "")
         : "";
 
-    const statsUrl = `${apiBase}/stats/cumulative`;
+    const statsUrl = `${apiBase}/api/stats`;
 
     async function fetchStats() {
       try {
@@ -31,22 +32,24 @@ export function useCumulativeStats(): CumulativeStats | null {
           typeof data.presenters === "number" &&
           typeof data.presentations_controlled === "number" &&
           typeof data.hours_presented === "number" &&
+          typeof data.downloads === "number" &&
           !cancelled
         ) {
           setStats({
             presenters: data.presenters,
             presentations_controlled: data.presentations_controlled,
             hours_presented: data.hours_presented,
+            downloads: data.downloads,
           });
         }
       } catch {
-        // Backend temporarily unavailable: keep previous state, do not set fake numbers
+        // Backend temporarily unavailable: keep previous state, never set fake numbers
       }
     }
 
     void fetchStats();
 
-    // Poll periodically every 30 seconds
+    // Lightweight periodic refresh every 30 seconds
     const interval = setInterval(fetchStats, 30000);
 
     const onVisibilityChange = () => {

@@ -72,64 +72,46 @@ const nav = [
 
 function Landing() {
   const [menuOpen, setMenuOpen] = useState(false);
-  const { isInstalled, platform, triggerInstall } = usePWAInstall();
+  const { installState, isInstalled, platform, triggerInstall, isAppInstalled } = usePWAInstall();
   const [alreadyInstalledOpen, setAlreadyInstalledOpen] = useState(false);
   const [instructionModalOpen, setInstructionModalOpen] = useState(false);
+  const [instructionPlatform, setInstructionPlatform] = useState<"ios" | "android" | "desktop">("desktop");
   const [installing, setInstalling] = useState(false);
 
-  // ── Free Download click handler ────────────────────────────────────────────
-  // Decision tree (in order):
-  //   1. Real standalone mode / appinstalled fired → "Already installed" dialog
-  //   2. Native beforeinstallprompt available      → fires browser install prompt
-  //   3. User accepted prompt                      → success / "Already installed"
-  //   4. User dismissed prompt                     → silently close (NOT "already installed")
+  const downloadButtonLabel =
+    installState === "INSTALLED"
+      ? "Already Installed"
+      : installState === "INSTALLING" || installing
+      ? "Installing…"
+      : installState === "MANUAL_INSTALL_REQUIRED"
+      ? "Install Master Presenter"
+      : "Free Download";
+
   async function handleDownload() {
+    if (installState === "INSTALLED" || isAppInstalled()) {
+      setAlreadyInstalledOpen(true);
+      return;
+    }
+
     setInstalling(true);
     try {
       const result = await triggerInstall();
-      if (result === "already_installed" || result === "installed") {
+      if (result === "already_installed") {
         setAlreadyInstalledOpen(true);
-      } else if (result === "show_instructions") {
+      } else if (result === "show_instructions_ios") {
+        setInstructionPlatform("ios");
+        setInstructionModalOpen(true);
+      } else if (result === "show_instructions_android") {
+        setInstructionPlatform("android");
+        setInstructionModalOpen(true);
+      } else if (result === "show_instructions_desktop") {
+        setInstructionPlatform("desktop");
         setInstructionModalOpen(true);
       }
-      // If result === "dismissed", user canceled the browser prompt; do not show "already installed"
+      // If result === "dismissed" or "prompt_accepted", do not claim already installed!
     } finally {
       setInstalling(false);
     }
-  }
-
-  async function handleModalInstall() {
-    setInstalling(true);
-    try {
-      const result = await triggerInstall();
-      if (result === "installed" || result === "already_installed") {
-        setInstructionModalOpen(false);
-        setAlreadyInstalledOpen(true);
-        return;
-      }
-      if (result === "show_instructions") {
-        // On iOS Safari, PWA installation is performed via the Share sheet -> Add to Home Screen
-        if (typeof navigator !== "undefined" && navigator.share) {
-          try {
-            await navigator.share({
-              title: "Master Presenter",
-              text: "Control your presentation with hand gestures — free, offline app.",
-              url: window.location.origin,
-            });
-            return;
-          } catch {
-            // User dismissed share sheet
-          }
-        }
-      }
-    } finally {
-      setInstalling(false);
-    }
-  }
-
-  function handleMarkInstalled() {
-    setInstructionModalOpen(false);
-    setAlreadyInstalledOpen(true);
   }
 
   const showDownloadBtn = true;
@@ -164,11 +146,11 @@ function Landing() {
                 id="header-free-download-btn"
                 size="sm"
                 variant="outline"
-                disabled={installing}
+                disabled={installing || installState === "INSTALLING"}
                 className="hidden rounded-full px-4 sm:flex"
                 onClick={handleDownload}
               >
-                <Download className="mr-1.5 h-3.5 w-3.5" /> Free Download
+                <Download className="mr-1.5 h-3.5 w-3.5" /> {downloadButtonLabel}
               </Button>
             )}
             <Button asChild size="sm" className="rounded-full px-4">
@@ -205,7 +187,12 @@ function Landing() {
       </header>
 
       <main id="top">
-        <Hero showDownloadBtn={showDownloadBtn} onDownload={handleDownload} />
+        <Hero
+          showDownloadBtn={showDownloadBtn}
+          onDownload={handleDownload}
+          downloadButtonLabel={downloadButtonLabel}
+          isInstalling={installing || installState === "INSTALLING"}
+        />
         <Marquee />
         <StatisticsSection />
         <HowItWorks />
@@ -230,7 +217,7 @@ function Landing() {
         </div>
       </footer>
 
-      {/* Already Installed Dialog */}
+      {/* Already Installed Dialog — ONLY appears when real standalone is confirmed */}
       <Dialog open={alreadyInstalledOpen} onOpenChange={setAlreadyInstalledOpen}>
         <DialogContent className="max-w-sm text-center">
           <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-2xl border border-border bg-card p-1.5 shadow-soft">
@@ -264,7 +251,7 @@ function Landing() {
         </DialogContent>
       </Dialog>
 
-      {/* Device-Specific PWA Installation Instructions */}
+      {/* Platform-Specific PWA Installation Instructions */}
       <Dialog open={instructionModalOpen} onOpenChange={setInstructionModalOpen}>
         <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <div className="flex items-center gap-3.5 rounded-2xl border border-border bg-card p-3 shadow-soft">
@@ -286,25 +273,93 @@ function Landing() {
             </span>
           </div>
 
-          <Button
-            id="modal-install-app-btn"
-            size="lg"
-            onClick={handleModalInstall}
-            disabled={installing}
-            className="mt-4 w-full rounded-xl py-6 text-base font-semibold shadow-soft"
-          >
-            {installing ? (
-              <>
-                <svg className="mr-2 h-5 w-5 animate-spin" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                </svg>
-                Installing…
-              </>
+          <div className="mt-4 rounded-2xl border border-border bg-card/60 p-4 text-left">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
+              INSTALL MASTER PRESENTER
+            </p>
+            {instructionPlatform === "ios" ? (
+              <ol className="mt-3 space-y-2.5 text-sm text-foreground/90">
+                <li className="flex items-start gap-2.5">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                    1
+                  </span>
+                  <span>Tap <strong>Share</strong> in Safari.</span>
+                </li>
+                <li className="flex items-start gap-2.5">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                    2
+                  </span>
+                  <span>Tap <strong>"Add to Home Screen"</strong>.</span>
+                </li>
+                <li className="flex items-start gap-2.5">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                    3
+                  </span>
+                  <span>Turn ON <strong>"Open as Web App"</strong> if available.</span>
+                </li>
+                <li className="flex items-start gap-2.5">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                    4
+                  </span>
+                  <span>Tap <strong>"Add"</strong>.</span>
+                </li>
+                <li className="flex items-start gap-2.5">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                    5
+                  </span>
+                  <span>Open Master Presenter from the new Home Screen icon.</span>
+                </li>
+              </ol>
+            ) : instructionPlatform === "android" ? (
+              <ol className="mt-3 space-y-2.5 text-sm text-foreground/90">
+                <li className="flex items-start gap-2.5">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                    1
+                  </span>
+                  <span>Open the browser menu.</span>
+                </li>
+                <li className="flex items-start gap-2.5">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                    2
+                  </span>
+                  <span>Choose <strong>"Install app"</strong> or <strong>"Add to Home screen"</strong>.</span>
+                </li>
+                <li className="flex items-start gap-2.5">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                    3
+                  </span>
+                  <span>Confirm installation.</span>
+                </li>
+                <li className="flex items-start gap-2.5">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                    4
+                  </span>
+                  <span>Open Master Presenter from the Home Screen/app launcher.</span>
+                </li>
+              </ol>
             ) : (
-              <><Download className="mr-2 h-5 w-5" /> Download & Install App</>
+              <ol className="mt-3 space-y-2.5 text-sm text-foreground/90">
+                <li className="flex items-start gap-2.5">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                    1
+                  </span>
+                  <span>Look for the <strong>Install</strong> icon in your browser address bar.</span>
+                </li>
+                <li className="flex items-start gap-2.5">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                    2
+                  </span>
+                  <span>Click <strong>"Install"</strong> to add Master Presenter as a desktop app.</span>
+                </li>
+                <li className="flex items-start gap-2.5">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                    3
+                  </span>
+                  <span>Launch Master Presenter anytime from your desktop or app launcher.</span>
+                </li>
+              </ol>
             )}
-          </Button>
+          </div>
 
           {/* Works Completely Offline Section */}
           <div className="mt-4 flex items-center gap-3.5 rounded-xl border border-primary/20 bg-primary/5 p-3.5">
@@ -323,15 +378,7 @@ function Landing() {
             </div>
           </div>
 
-          <div className="mt-4 flex items-center justify-between border-t border-border pt-3 gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleMarkInstalled}
-              className="text-xs text-muted-foreground hover:text-foreground"
-            >
-              <Check className="mr-1.5 h-3.5 w-3.5 text-primary" /> I've already installed it
-            </Button>
+          <div className="mt-4 flex items-center justify-end border-t border-border pt-3">
             <Button
               variant="outline"
               size="sm"
@@ -350,9 +397,13 @@ function Landing() {
 function Hero({
   showDownloadBtn,
   onDownload,
+  downloadButtonLabel,
+  isInstalling,
 }: {
   showDownloadBtn: boolean;
   onDownload: () => void;
+  downloadButtonLabel?: string;
+  isInstalling?: boolean;
 }) {
   return (
     <section className="surface-hero relative overflow-hidden">
@@ -379,10 +430,11 @@ function Hero({
                 id="hero-free-download-btn"
                 size="lg"
                 variant="outline"
+                disabled={isInstalling}
                 className="w-full rounded-full px-7 sm:w-auto"
                 onClick={onDownload}
               >
-                <Download className="mr-1.5 h-4 w-4" /> Free Download
+                <Download className="mr-1.5 h-4 w-4" /> {downloadButtonLabel || "Free Download"}
               </Button>
             ) : (
               <Button
@@ -486,19 +538,29 @@ function StatisticsSection() {
       label: "HOURS PRESENTED",
       icon: Gauge,
     },
+    {
+      id: "stat-downloads",
+      value: stats ? formatCount(stats.downloads) : "—",
+      label: "DOWNLOADS",
+      icon: Download,
+    },
   ];
 
   return (
     <section className="border-b border-border/60 bg-card/40 py-12 sm:py-16">
-      <div className="mx-auto max-w-5xl px-5 lg:px-8">
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+      <div className="mx-auto max-w-6xl px-5 lg:px-8">
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
           {statItems.map((item) => (
             <div
               key={item.label}
-              className="card-premium flex flex-col items-center justify-center p-6 text-center sm:p-8"
+              className="card-premium flex flex-col items-center justify-center p-6 text-center sm:p-7 relative overflow-hidden"
             >
-              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                <item.icon className="h-5 w-5" />
+              <span className="mb-2.5 inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-0.5 text-[10.5px] font-semibold tracking-wider text-primary uppercase">
+                <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+                LIVE COUNT
+              </span>
+              <div className="mb-1.5 flex h-9 w-9 items-center justify-center rounded-xl bg-primary/5 text-primary">
+                <item.icon className="h-4.5 w-4.5" />
               </div>
               <div
                 id={item.id}

@@ -1,15 +1,26 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { getAnonymousClientId } from "@/lib/client-id";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 }
 
+export type InstallationState =
+  | "NOT_INSTALLED"
+  | "INSTALL_PROMPT_AVAILABLE"
+  | "INSTALLING"
+  | "INSTALLED"
+  | "MANUAL_INSTALL_REQUIRED"
+  | "UNSUPPORTED";
+
 export type PWAInstallResult =
   | "already_installed"
-  | "installed"
+  | "prompt_accepted"
   | "dismissed"
-  | "show_instructions";
+  | "show_instructions_ios"
+  | "show_instructions_android"
+  | "show_instructions_desktop";
 
 export type DevicePlatform =
   | "ios"
@@ -18,7 +29,36 @@ export type DevicePlatform =
   | "mac_safari"
   | "generic";
 
-function detectPlatform(): DevicePlatform {
+/**
+ * Real Installed-PWA detection.
+ *
+ * Rules:
+ *   - window.matchMedia("(display-mode: standalone)").matches
+ *   - window.matchMedia("(display-mode: fullscreen)").matches
+ *   - window.matchMedia("(display-mode: minimal-ui)").matches
+ *   - window.navigator.standalone === true (iOS Safari standalone)
+ *
+ * NEVER uses:
+ *   - localStorage / sessionStorage
+ *   - user-agent checks
+ *   - referrer checks
+ *
+ * A normal browser tab MUST and DOES return false.
+ */
+export function isAppInstalled(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const isStandalone = window.matchMedia("(display-mode: standalone)").matches;
+    const isFullscreen = window.matchMedia("(display-mode: fullscreen)").matches;
+    const isMinimalUi = window.matchMedia("(display-mode: minimal-ui)").matches;
+    const isIosStandalone = (window.navigator as any).standalone === true;
+    return Boolean(isStandalone || isFullscreen || isMinimalUi || isIosStandalone);
+  } catch {
+    return false;
+  }
+}
+
+export function detectPlatform(): DevicePlatform {
   if (typeof window === "undefined" || typeof navigator === "undefined") {
     return "generic";
   }
@@ -36,109 +76,112 @@ function detectPlatform(): DevicePlatform {
 }
 
 /**
- * Returns true ONLY when the app is genuinely running in PWA standalone mode.
- *
- * Sources of truth (real browser signals only):
- *   - window.matchMedia("(display-mode: standalone)").matches   — Chrome / Edge / Android
- *   - window.navigator.standalone === true                       — iOS Safari
- *   - document.referrer.startsWith("android-app://")            — Android TWA
- *
- * Intentionally excluded (NOT reliable):
- *   - localStorage / sessionStorage flags
- *   - Service worker registration status
- *   - navigator.serviceWorker.controller
- *   - getInstalledRelatedApps (not trustworthy cross-browser)
- *   - Any button click or page visit
+ * Report a confirmed real PWA install to the backend.
+ * Uses the stable anonymous client ID so Redis SADD mp:installed_clients
+ * ensures idempotent deduplication (one real device = 1 download count).
  */
-function checkRealStandaloneMode(): boolean {
-  if (typeof window === "undefined") return false;
-  const standaloneMedia = window.matchMedia("(display-mode: standalone)").matches;
-  const iosStandalone =
-    (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
-  const androidTwa = document.referrer.startsWith("android-app://");
-  return standaloneMedia || iosStandalone || androidTwa;
+export async function sendPwaDownloadRecord(clientId: string): Promise<void> {
+  if (typeof window === "undefined" || !clientId) return;
+  const apiBase =
+    typeof import.meta !== "undefined" && import.meta.env?.VITE_PRESENTATION_API_URL
+      ? String(import.meta.env.VITE_PRESENTATION_API_URL).replace(/\/$/, "")
+      : "";
+  const url = `${apiBase}/api/stats/download`;
+  try {
+    const payload = JSON.stringify({ client_id: clientId });
+    if (typeof navigator !== "undefined" && navigator.sendBeacon) {
+      const blob = new Blob([payload], { type: "application/json" });
+      navigator.sendBeacon(url, blob);
+    } else {
+      await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: payload,
+        keepalive: true,
+      });
+    }
+  } catch {
+    // ignore
+  }
 }
 
 export function usePWAInstall() {
-  // ── State ──────────────────────────────────────────────────────────────────
-  //
-  // isInstalled is set to true ONLY by:
-  //   1. checkRealStandaloneMode() on mount (running as installed PWA)
-  //   2. The native "appinstalled" browser event
-  //   3. The display-mode media query changing to standalone
-  //
-  // It is NEVER set from localStorage, button clicks, or service worker state.
-  const [isInstalled, setIsInstalled] = useState<boolean>(
-    () => (typeof window !== "undefined" ? checkRealStandaloneMode() : false)
+  const [platform, setPlatform] = useState<DevicePlatform>("generic");
+  const [installState, setInstallState] = useState<InstallationState>(() =>
+    isAppInstalled() ? "INSTALLED" : "NOT_INSTALLED"
   );
 
-  const [platform, setPlatform] = useState<DevicePlatform>("generic");
-
-  // Use a ref so triggerInstall always has the most current prompt, even when
-  // the component re-renders before the async prompt resolves.
   const deferredPromptRef = useRef<BeforeInstallPromptEvent | null>(null);
 
-  // Expose a boolean so components can conditionally show install UI
-  const [hasInstallPrompt, setHasInstallPrompt] = useState<boolean>(false);
-
-  // ── Effects ────────────────────────────────────────────────────────────────
   useEffect(() => {
-    // 1. Detect platform
-    setPlatform(detectPlatform());
+    const currentPlatform = detectPlatform();
+    setPlatform(currentPlatform);
 
-    // 2. Re-check real standalone mode now that we're in the browser
-    if (checkRealStandaloneMode()) {
-      setIsInstalled(true);
+    const installed = isAppInstalled();
+    if (installed) {
+      setInstallState("INSTALLED");
+      // If launched in standalone mode, record the installation idempotently in Redis
+      const clientId = getAnonymousClientId();
+      sendPwaDownloadRecord(clientId).catch(() => {});
+    } else if (currentPlatform === "ios") {
+      // iOS has no beforeinstallprompt; uninstalled iOS users require manual Add to Home Screen
+      setInstallState("MANUAL_INSTALL_REQUIRED");
     }
 
-    // 3. Pick up any prompt captured by the inline <script> in <head> before
-    //    React mounted (the script runs synchronously before hydration)
+    // Pick up early prompt if captured in window
     const earlyPrompt = (window as any).__deferredPWAInstallPrompt as
       | BeforeInstallPromptEvent
       | null
       | undefined;
-    if (earlyPrompt) {
+    if (earlyPrompt && !installed) {
       deferredPromptRef.current = earlyPrompt;
-      setHasInstallPrompt(true);
+      setInstallState("INSTALL_PROMPT_AVAILABLE");
     }
 
-    // 4. Register a callback so the inline script can hand us future events
-    (window as any).__onPWAInstallAvailable = (
-      promptEvent: BeforeInstallPromptEvent
-    ) => {
+    (window as any).__onPWAInstallAvailable = (promptEvent: BeforeInstallPromptEvent) => {
       deferredPromptRef.current = promptEvent;
-      setHasInstallPrompt(true);
+      if (!isAppInstalled()) {
+        setInstallState("INSTALL_PROMPT_AVAILABLE");
+      }
     };
 
-    // 5. Register Service Worker (offline capability only — not an install signal)
+    // Register Service Worker for offline capability
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").catch(console.error);
     }
 
-    // 6. Listen for beforeinstallprompt (fires when browser is ready to prompt)
+    // Listen for beforeinstallprompt
     const onBeforeInstallPrompt = (e: Event) => {
-      e.preventDefault(); // suppress mini-infobar on mobile Chrome
+      e.preventDefault();
       const prompt = e as BeforeInstallPromptEvent;
       (window as any).__deferredPWAInstallPrompt = prompt;
       deferredPromptRef.current = prompt;
-      setHasInstallPrompt(true);
+      if (!isAppInstalled()) {
+        setInstallState("INSTALL_PROMPT_AVAILABLE");
+      }
     };
     window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
 
-    // 7. Listen for appinstalled — the REAL signal the PWA was installed
+    // Listen for appinstalled — authoritative signal of real Chromium PWA install
     const onAppInstalled = () => {
-      setIsInstalled(true);
-      // Clear the prompt; it has been consumed
+      setInstallState("INSTALLED");
       deferredPromptRef.current = null;
       (window as any).__deferredPWAInstallPrompt = null;
-      setHasInstallPrompt(false);
+
+      // Report confirmed download to backend
+      const clientId = getAnonymousClientId();
+      sendPwaDownloadRecord(clientId).catch(() => {});
     };
     window.addEventListener("appinstalled", onAppInstalled);
 
-    // 8. Watch display-mode changes (e.g. user opens installed PWA later)
+    // Watch display-mode changes
     const mq = window.matchMedia("(display-mode: standalone)");
     const onMqChange = (e: MediaQueryListEvent) => {
-      if (e.matches) setIsInstalled(true);
+      if (e.matches) {
+        setInstallState("INSTALLED");
+        const clientId = getAnonymousClientId();
+        sendPwaDownloadRecord(clientId).catch(() => {});
+      }
     };
     mq.addEventListener?.("change", onMqChange);
 
@@ -150,27 +193,25 @@ export function usePWAInstall() {
     };
   }, []);
 
-  // ── triggerInstall ─────────────────────────────────────────────────────────
   const triggerInstall = useCallback(async (): Promise<PWAInstallResult> => {
-    // ── Step 1: check REAL standalone mode (never localStorage) ──────────────
-    if (checkRealStandaloneMode() || isInstalled) {
+    // 1. Real standalone check
+    if (isAppInstalled() || installState === "INSTALLED") {
       return "already_installed";
     }
 
-    // ── Step 2: get the native install prompt ─────────────────────────────────
+    // 2. Native install prompt (Chromium on Android / Desktop)
     let prompt =
       deferredPromptRef.current ??
       ((window as any).__deferredPWAInstallPrompt as BeforeInstallPromptEvent | null) ??
       null;
 
-    // Step 2b: wait briefly in case the browser fires the event just after
-    //          the user clicked (common on first page load in Chrome)
     if (!prompt) {
+      // Brief grace period for first page load in Chromium
       prompt = await new Promise<BeforeInstallPromptEvent | null>((resolve) => {
         const timer = setTimeout(() => {
           window.removeEventListener("beforeinstallprompt", handler);
           resolve(null);
-        }, 800);
+        }, 500);
         const handler = (e: Event) => {
           e.preventDefault();
           clearTimeout(timer);
@@ -184,46 +225,46 @@ export function usePWAInstall() {
       });
     }
 
-    // ── Step 3: fire the native prompt if we have it ─────────────────────────
     if (prompt) {
+      setInstallState("INSTALLING");
       try {
         await prompt.prompt();
         const { outcome } = await prompt.userChoice;
 
-        // Prompt is single-use — clear it regardless of outcome
         deferredPromptRef.current = null;
         (window as any).__deferredPWAInstallPrompt = null;
-        setHasInstallPrompt(false);
 
         if (outcome === "accepted") {
-          // Do NOT mark as installed here — wait for the real "appinstalled" event.
-          // Return "installed" so the UI can show a success/confirmation dialog.
-          return "installed";
+          // Keep in installing/waiting until appinstalled event fires
+          return "prompt_accepted";
         }
 
-        // User tapped "Cancel" / "Not now" — they are NOT installed.
-        // Do NOT say "already_installed".
+        // User dismissed
+        setInstallState("NOT_INSTALLED");
         return "dismissed";
       } catch (err) {
-        console.error("[usePWAInstall] prompt() threw:", err);
+        console.error("[usePWAInstall] prompt error:", err);
       }
     }
 
-    // ── Step 4: no native prompt, not installed → show manual instructions ────
-    // NEVER return "already_installed" here. Absence of beforeinstallprompt
-    // does NOT mean the app is installed.
-    return "show_instructions";
-  }, [isInstalled]);
+    // 3. No native prompt available → show platform-specific manual instructions
+    const currentPlatform = detectPlatform();
+    setInstallState("MANUAL_INSTALL_REQUIRED");
 
-  // ── Public API ─────────────────────────────────────────────────────────────
+    if (currentPlatform === "ios") {
+      return "show_instructions_ios";
+    }
+    if (currentPlatform === "android") {
+      return "show_instructions_android";
+    }
+    return "show_instructions_desktop";
+  }, [installState]);
+
   return {
-    /** True only when genuinely running as an installed standalone PWA. */
-    isInstalled,
-    /** True when the browser has a capturable install prompt ready. */
-    hasInstallPrompt,
-    /** Alias kept for backward compatibility */
-    deferredPromptAvailable: hasInstallPrompt,
+    installState,
+    isInstalled: installState === "INSTALLED",
     platform,
     triggerInstall,
+    isAppInstalled,
   };
 }

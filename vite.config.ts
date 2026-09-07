@@ -11,6 +11,7 @@ import {
   getCumulativeStats,
   recordSessionStart,
   recordSessionEnd,
+  recordDownload,
 } from "./src/lib/cumulative-stats";
 
 function liveStatsDevPlugin(): Plugin {
@@ -20,7 +21,7 @@ function liveStatsDevPlugin(): Plugin {
       server.middlewares.use(async (req, res, next) => {
         const url = req.url?.split("?")[0];
 
-        if (url === "/stats/cumulative" && req.method === "GET") {
+        if ((url === "/api/stats" || url === "/stats/cumulative") && req.method === "GET") {
           try {
             const stats = await getCumulativeStats();
             res.setHeader("Content-Type", "application/json");
@@ -35,6 +36,29 @@ function liveStatsDevPlugin(): Plugin {
           return;
         }
 
+        if ((url === "/api/stats/download" || url === "/stats/download") && req.method === "POST") {
+          let body = "";
+          req.on("data", (chunk: any) => {
+            body += chunk;
+          });
+          req.on("end", async () => {
+            try {
+              if (body) {
+                const data = JSON.parse(body);
+                if (data.client_id) {
+                  await recordDownload(data.client_id);
+                }
+              }
+            } catch {
+              // ignore
+            }
+            res.setHeader("Content-Type", "application/json");
+            res.setHeader("Access-Control-Allow-Origin", "*");
+            res.end(JSON.stringify({ status: "ok" }));
+          });
+          return;
+        }
+
         if (url === "/stats/session/start" && req.method === "POST") {
           let body = "";
           req.on("data", (chunk: any) => {
@@ -45,7 +69,7 @@ function liveStatsDevPlugin(): Plugin {
               if (body) {
                 const data = JSON.parse(body);
                 if (data.client_id) {
-                  await recordSessionStart(data.client_id);
+                  await recordSessionStart(data.client_id, data.session_id);
                 }
               }
             } catch {

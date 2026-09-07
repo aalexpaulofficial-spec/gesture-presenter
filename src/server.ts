@@ -49,11 +49,32 @@ import {
   getCumulativeStats,
   recordSessionStart,
   recordSessionEnd,
+  recordDownload,
 } from "./lib/cumulative-stats";
 
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     const url = new URL(request.url);
+
+    // ── Health check ──────────────────────────────────────────────────────────
+
+    if (url.pathname === "/health" || url.pathname === "/ping") {
+      return new Response(
+        JSON.stringify({
+          status: "ok",
+          timestamp: new Date().toISOString(),
+          uptime: (globalThis as any).process?.uptime?.() ?? 0,
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+          },
+        },
+      );
+    }
 
     if (url.pathname === "/stats/live" && request.method === "GET") {
       return new Response(
@@ -71,7 +92,7 @@ export default {
 
     // ── Cumulative statistics ─────────────────────────────────────────────────
 
-    if (url.pathname === "/stats/cumulative" && request.method === "GET") {
+    if ((url.pathname === "/api/stats" || url.pathname === "/stats/cumulative") && request.method === "GET") {
       try {
         const stats = await getCumulativeStats();
         return new Response(JSON.stringify(stats), {
@@ -90,11 +111,37 @@ export default {
       }
     }
 
+    if ((url.pathname === "/api/stats/download" || url.pathname === "/stats/download") && request.method === "POST") {
+      try {
+        let body: { client_id?: string } = {};
+        const text = await request.text();
+        if (text) {
+          try {
+            body = JSON.parse(text) as typeof body;
+          } catch {
+            // raw text
+          }
+        }
+        if (body?.client_id) {
+          await recordDownload(body.client_id);
+        }
+      } catch {
+        // ignore
+      }
+      return new Response(JSON.stringify({ status: "ok" }), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      });
+    }
+
     if (url.pathname === "/stats/session/start" && request.method === "POST") {
       try {
         const body = (await request.json()) as { client_id?: string; session_id?: string };
         if (body?.client_id) {
-          await recordSessionStart(body.client_id);
+          await recordSessionStart(body.client_id, body.session_id);
         }
       } catch {
         // ignore JSON parse or store errors — never block the presenter
