@@ -538,7 +538,7 @@ function PresentPage() {
             </Link>
             <Link to="/" className="flex items-center gap-2 transition-opacity hover:opacity-90">
               <img
-                src="/MASTER PRESENTER LOGO WITH BG.png"
+                src="/logo.png"
                 alt="Master Presenter"
                 className="h-7 sm:h-8 w-auto object-contain"
               />

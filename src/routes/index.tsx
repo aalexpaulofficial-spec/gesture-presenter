@@ -153,7 +153,7 @@ function Landing() {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-3.5 lg:px-8">
           <a href="#top" className="flex items-center gap-2.5 transition-opacity hover:opacity-90">
             <img
-              src="/MASTER PRESENTER LOGO WITH BG.png"
+              src="/logo.png"
               alt="Master Presenter"
               className="h-8 sm:h-9 w-auto max-w-[190px] sm:max-w-[240px] object-contain"
             />
@@ -233,7 +233,7 @@ function Landing() {
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-5 text-sm text-muted-foreground sm:flex-row lg:px-8">
           <span className="flex items-center gap-2 font-display font-semibold text-foreground">
             <img
-              src="/MASTER PRESENTER LOGO WITH BG.png"
+              src="/logo.png"
               alt="Master Presenter"
               className="h-7 sm:h-8 w-auto object-contain"
             />
@@ -247,7 +247,7 @@ function Landing() {
         <DialogContent className="max-w-sm text-center">
           <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-2xl border border-border bg-card p-1.5 shadow-soft">
             <img
-              src="/MASTER PRESENTER OFFICIAL LOGO WITH BG.png"
+              src="/app-icon-512.png"
               alt="Master Presenter Official Logo"
               className="h-full w-full rounded-xl object-contain"
             />
@@ -281,7 +281,7 @@ function Landing() {
         <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <div className="flex items-center gap-3.5 rounded-2xl border border-border bg-card p-3 shadow-soft">
             <img
-              src="/MASTER PRESENTER OFFICIAL LOGO WITH BG.png"
+              src="/app-icon-512.png"
               alt="Master Presenter App"
               className="h-14 w-14 rounded-xl border border-border/60 bg-white object-contain p-0.5 shadow-xs shrink-0"
             />
@@ -322,7 +322,7 @@ function Landing() {
           <div className="mt-4 flex items-center gap-3.5 rounded-xl border border-primary/20 bg-primary/5 p-3.5">
             <div className="shrink-0 rounded-lg border border-border/70 bg-white p-1.5 shadow-xs">
               <img
-                src="/MASTER PRESENTER OFFICIAL LOGO WITH BG.png"
+                src="/app-icon-512.png"
                 alt="Master Presenter Official"
                 className="h-10 w-10 object-contain"
               />
