@@ -1045,10 +1045,10 @@ function FinalCta() {
             className="flex items-center gap-2 text-xs text-[oklch(0.8_0.02_150)]"
           >
             <Users className="h-3.5 w-3.5" />
-            {liveUsers !== null ? (
+            {liveUsers !== null && liveUsers > 0 ? (
               <span id="live-user-count" data-testid="live-user-count">
                 <span className="font-semibold">{liveUsers}</span> active{" "}
-                {liveUsers === 1 ? "user" : "users"} ·{" "}
+                {liveUsers === 1 ? "presenter" : "presenters"} now ·{" "}
               </span>
             ) : null}
             Free hand control, no account needed
