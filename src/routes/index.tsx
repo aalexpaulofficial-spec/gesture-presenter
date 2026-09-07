@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   ArrowRight,
   Check,
@@ -84,13 +84,16 @@ function Landing() {
   });
   const [installing, setInstalling] = useState(false);
 
+  // Initialize instructionPlatform after mount for proper client-side detection
   useEffect(() => {
     if (isAndroid()) {
       setInstructionPlatform("android");
     } else if (isIos()) {
       setInstructionPlatform("ios");
     }
-  }, [isAndroid, isIos]);
+    // Empty deps: runs once on mount to sync SSR vs client platform detection
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const downloadButtonLabel =
     installState === "INSTALLED" || isInstalled
