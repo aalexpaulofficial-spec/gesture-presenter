@@ -141,13 +141,14 @@ export function DeckStage({
         {/* Voice highlights */}
         {highlights.map((h) => {
           const colorKey = h.color.toLowerCase();
+          const fallbackColor = { border: "#eab308", bg: "rgba(250, 204, 21, 0.35)" };
           const colorMap: Record<string, { border: string; bg: string }> = {
-            yellow: { border: "#eab308", bg: "rgba(250, 204, 21, 0.35)" },
+            yellow: fallbackColor,
             red: { border: "#ef4444", bg: "rgba(239, 68, 68, 0.35)" },
             green: { border: "#22c55e", bg: "rgba(34, 197, 94, 0.35)" },
             blue: { border: "#3b82f6", bg: "rgba(59, 130, 246, 0.35)" },
           };
-          const current = colorMap[colorKey] || colorMap.yellow;
+          const current = colorMap[colorKey] ?? fallbackColor;
           return (
             <div
               key={h.id}

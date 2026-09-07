@@ -11,25 +11,25 @@
   "orientation": "any",
   "icons": [
     {
-      "src": "/icon-192.png",
-      "sizes": "192x192",
+      "src": "/MASTER PRESENTER OFFICIAL LOGO WITH BG.png",
+      "sizes": "1024x1024",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icon-512.png",
+      "src": "/MASTER PRESENTER OFFICIAL LOGO WITH BG.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icon-192.png",
+      "src": "/MASTER PRESENTER OFFICIAL LOGO WITH BG.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "maskable"
+      "purpose": "any"
     },
     {
-      "src": "/icon-512.png",
+      "src": "/MASTER PRESENTER OFFICIAL LOGO WITH BG.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"

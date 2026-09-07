@@ -90,13 +90,12 @@ function Landing() {
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-50 border-b border-border/70 bg-background/85 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-3.5 lg:px-8">
-          <a href="#top" className="flex items-center gap-2.5">
-            <span className="grid h-9 w-9 place-items-center rounded-xl bg-primary text-primary-foreground shadow-soft">
-              <Hand className="h-4.5 w-4.5" />
-            </span>
-            <span className="font-display text-[15px] font-semibold tracking-tight">
-              Master Presenter
-            </span>
+          <a href="#top" className="flex items-center gap-2.5 transition-opacity hover:opacity-90">
+            <img
+              src="/MASTER PRESENTER LOGO WITH BG.png"
+              alt="Master Presenter"
+              className="h-8 sm:h-9 w-auto max-w-[190px] sm:max-w-[240px] object-contain"
+            />
           </a>
 
           <nav className="hidden items-center gap-8 md:flex">
@@ -171,7 +170,11 @@ function Landing() {
       <footer className="border-t border-border py-10">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-5 text-sm text-muted-foreground sm:flex-row lg:px-8">
           <span className="flex items-center gap-2 font-display font-semibold text-foreground">
-            <Hand className="h-4 w-4 text-primary" /> Master Presenter
+            <img
+              src="/MASTER PRESENTER LOGO WITH BG.png"
+              alt="Master Presenter"
+              className="h-7 sm:h-8 w-auto object-contain"
+            />
           </span>
           <span>Present with your hands. © {new Date().getFullYear()}</span>
         </div>
@@ -180,30 +183,69 @@ function Landing() {
       {/* Already Installed Dialog */}
       <Dialog open={alreadyInstalledOpen} onOpenChange={setAlreadyInstalledOpen}>
         <DialogContent className="max-w-sm text-center">
+          <div className="mx-auto mb-2 flex h-16 w-16 items-center justify-center rounded-2xl border border-border bg-card p-1.5 shadow-soft">
+            <img
+              src="/MASTER PRESENTER OFFICIAL LOGO WITH BG.png"
+              alt="Master Presenter Official Logo"
+              className="h-full w-full rounded-xl object-contain"
+            />
+          </div>
           <DialogHeader>
             <DialogTitle className="font-display text-lg">Already installed</DialogTitle>
             <DialogDescription className="text-sm mt-2 text-muted-foreground">
               Master Presenter is already installed on this device.
             </DialogDescription>
           </DialogHeader>
-          <div className="mt-4 flex justify-center">
-            <Button onClick={() => setAlreadyInstalledOpen(false)} className="rounded-full px-6">
+          <div className="mt-4 flex flex-col items-center gap-2.5">
+            <a
+              href="/MASTER PRESENTER OFFICIAL LOGO WITH BG.png"
+              download="MASTER PRESENTER OFFICIAL LOGO WITH BG.png"
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
+            >
+              <Download className="h-3.5 w-3.5" /> Download Official Logo
+            </a>
+            <Button onClick={() => setAlreadyInstalledOpen(false)} className="mt-1 rounded-full px-6">
               OK
             </Button>
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* Device-Specific PWA Installation Instructions */}
+      {/* Device-Specific PWA Installation Instructions & Official Logo Download */}
       <Dialog open={instructionModalOpen} onOpenChange={setInstructionModalOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="font-display text-lg">Install Master Presenter</DialogTitle>
-            <DialogDescription className="text-sm mt-1 text-muted-foreground">
-              Install as a lightweight app to use full presentation controls offline.
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+          <div className="flex items-center gap-3.5 rounded-2xl border border-border bg-card p-3 shadow-soft">
+            <img
+              src="/MASTER PRESENTER OFFICIAL LOGO WITH BG.png"
+              alt="Master Presenter Official App"
+              className="h-14 w-14 rounded-xl border border-border/60 bg-white object-contain p-0.5 shadow-xs shrink-0"
+            />
+            <div className="min-w-0 flex-1 text-left">
+              <h4 className="font-display text-base font-semibold leading-tight text-foreground">
+                Master Presenter
+              </h4>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Official Presentation App · Offline Ready
+              </p>
+            </div>
+            <a
+              href="/MASTER PRESENTER OFFICIAL LOGO WITH BG.png"
+              download="MASTER PRESENTER OFFICIAL LOGO WITH BG.png"
+              title="Download Official Logo"
+              className="inline-flex items-center gap-1 rounded-lg border border-border bg-secondary/80 px-2.5 py-1.5 text-[11px] font-medium text-foreground transition-colors hover:bg-secondary"
+            >
+              <Download className="h-3 w-3" /> Logo
+            </a>
+          </div>
+
+          <DialogHeader className="text-left mt-2">
+            <DialogTitle className="font-display text-base">Install / Download App</DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Install to your home screen or desktop to present smoothly anytime, even offline.
             </DialogDescription>
           </DialogHeader>
-          <div className="mt-4 space-y-3 text-sm text-muted-foreground">
+
+          <div className="mt-2 space-y-3 text-sm text-muted-foreground">
             {platform === "ios" ? (
               <div className="rounded-xl border border-border bg-card p-4 space-y-2">
                 <p className="font-semibold text-foreground">On iPhone & iPad (Safari):</p>
@@ -261,12 +303,38 @@ function Landing() {
                 </ol>
               </div>
             )}
+
+            {/* Official App Box */}
+            <div className="flex items-center gap-3.5 rounded-xl border border-primary/20 bg-primary/5 p-3">
+              <div className="shrink-0 rounded-lg border border-border/70 bg-white p-1 shadow-xs">
+                <img
+                  src="/MASTER PRESENTER OFFICIAL LOGO WITH BG.png"
+                  alt="Master Presenter Official"
+                  className="h-12 w-12 object-contain"
+                />
+              </div>
+              <div className="text-left">
+                <p className="text-xs font-semibold text-foreground">Official Master Presenter App</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  Full gesture control, voice navigation, and slide presentation working directly on your device.
+                </p>
+              </div>
+            </div>
           </div>
-          <div className="mt-4 flex justify-end">
+
+          <div className="mt-4 flex items-center justify-between border-t border-border pt-3">
+            <a
+              href="/MASTER PRESENTER OFFICIAL LOGO WITH BG.png"
+              download="MASTER PRESENTER OFFICIAL LOGO WITH BG.png"
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
+            >
+              <Download className="h-3.5 w-3.5" /> Download Official Logo
+            </a>
             <Button
               variant="outline"
+              size="sm"
               onClick={() => setInstructionModalOpen(false)}
-              className="rounded-full px-6"
+              className="rounded-full px-5 text-xs"
             >
               Close
             </Button>

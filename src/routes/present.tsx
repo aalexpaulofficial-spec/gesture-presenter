@@ -536,11 +536,12 @@ function PresentPage() {
             >
               <ArrowLeft className="h-4 w-4" />
             </Link>
-            <Link to="/" className="flex items-center gap-2 font-display text-sm font-semibold">
-              <span className="grid h-8 w-8 place-items-center rounded-xl bg-primary text-primary-foreground">
-                <Hand className="h-4 w-4" />
-              </span>
-              Master Presenter
+            <Link to="/" className="flex items-center gap-2 transition-opacity hover:opacity-90">
+              <img
+                src="/MASTER PRESENTER LOGO WITH BG.png"
+                alt="Master Presenter"
+                className="h-7 sm:h-8 w-auto object-contain"
+              />
             </Link>
             <span
               className={`ml-2 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${

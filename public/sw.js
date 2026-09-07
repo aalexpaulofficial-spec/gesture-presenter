@@ -1,12 +1,12 @@
-const CACHE_NAME = "master-presenter-v2";
+const CACHE_NAME = "master-presenter-v3";
 
 // Core application shell assets to cache for offline usage
 const PRECACHE_URLS = [
   "/",
   "/present",
   "/manifest.json",
-  "/GESTURE PRESENTER LOGO DESIGN.png",
-  "/favicon.ico",
+  "/MASTER PRESENTER LOGO WITH BG.png",
+  "/MASTER PRESENTER OFFICIAL LOGO WITH BG.png",
 ];
 
 // Install: cache application shell
