@@ -72,7 +72,17 @@ const nav = [
 
 function Landing() {
   const [menuOpen, setMenuOpen] = useState(false);
-  const { installState, isInstalled, platform, triggerInstall, isAppInstalled, isInstallConfirmed, isAndroid, isIos } = usePWAInstall();
+  const {
+    installState,
+    isInstalled,
+    platform,
+    triggerInstall,
+    isAppInstalled,
+    isRunningAsInstalledPWA,
+    isInstallationConfirmed,
+    isAndroid,
+    isIos,
+  } = usePWAInstall();
   const [alreadyInstalledOpen, setAlreadyInstalledOpen] = useState(false);
   const [instructionModalOpen, setInstructionModalOpen] = useState(false);
   const [instructionPlatform, setInstructionPlatform] = useState<"ios" | "android" | "desktop">(() => {
@@ -95,15 +105,20 @@ function Landing() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const downloadButtonLabel =
-    installState === "INSTALLED" || isInstalled || isInstallConfirmed()
-      ? "Already Installed"
-      : installState === "INSTALLING" || installing
-      ? "Installing…"
-      : "Free Download";
+  const isConfirmedInstalled =
+    installState === "INSTALLED" ||
+    isInstalled ||
+    isRunningAsInstalledPWA() ||
+    isInstallationConfirmed();
+
+  const downloadButtonLabel = isConfirmedInstalled
+    ? "Already Installed"
+    : installState === "INSTALLING" || installing
+    ? "Installing…"
+    : "Free Download";
 
   async function handleDownload() {
-    if (installState === "INSTALLED" || isInstalled || isAppInstalled() || isInstallConfirmed()) {
+    if (isConfirmedInstalled || isInstallationConfirmed() || isRunningAsInstalledPWA()) {
       setAlreadyInstalledOpen(true);
       return;
     }
