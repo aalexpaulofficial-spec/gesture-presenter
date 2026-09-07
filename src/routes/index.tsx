@@ -72,7 +72,7 @@ const nav = [
 
 function Landing() {
   const [menuOpen, setMenuOpen] = useState(false);
-  const { installState, isInstalled, platform, triggerInstall, isAppInstalled, isAndroid, isIos } = usePWAInstall();
+  const { installState, isInstalled, platform, triggerInstall, isAppInstalled, isInstallConfirmed, isAndroid, isIos } = usePWAInstall();
   const [alreadyInstalledOpen, setAlreadyInstalledOpen] = useState(false);
   const [instructionModalOpen, setInstructionModalOpen] = useState(false);
   const [instructionPlatform, setInstructionPlatform] = useState<"ios" | "android" | "desktop">(() => {
@@ -96,14 +96,14 @@ function Landing() {
   }, []);
 
   const downloadButtonLabel =
-    installState === "INSTALLED" || isInstalled
+    installState === "INSTALLED" || isInstalled || isInstallConfirmed()
       ? "Already Installed"
       : installState === "INSTALLING" || installing
       ? "Installing…"
       : "Free Download";
 
   async function handleDownload() {
-    if (installState === "INSTALLED" || isAppInstalled()) {
+    if (installState === "INSTALLED" || isInstalled || isAppInstalled() || isInstallConfirmed()) {
       setAlreadyInstalledOpen(true);
       return;
     }

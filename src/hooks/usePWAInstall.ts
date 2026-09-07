@@ -29,19 +29,81 @@ export type DevicePlatform =
   | "mac_safari"
   | "generic";
 
+// ─── Module-level singletons ────────────────────────────────────────────────
+
 /**
- * Module-level storage for beforeinstallprompt event.
- * Captures the event immediately when the script runs in the browser,
- * preventing any race condition between page load and React hydration.
+ * The deferred install prompt captured before React hydration.
  */
 let globalDeferredPrompt: BeforeInstallPromptEvent | null = null;
 
+/**
+ * TRUE once we have reliable evidence the PWA is installed on this device.
+ *
+ * Set by any of:
+ *  - display-mode: standalone / fullscreen / minimal-ui (running as PWA)
+ *  - navigator.standalone === true (iOS Safari PWA)
+ *  - navigator.getInstalledRelatedApps() returning this app (Chrome 84+)
+ *  - the browser's `appinstalled` event firing
+ *
+ * Never set by localStorage or any fake flag.
+ */
+let globalInstallConfirmed = false;
+
+/**
+ * React state updaters registered by mounted hook instances.
+ * Allows the async installed check to push state into React.
+ */
+const _installConfirmedListeners: Array<() => void> = [];
+
+function _fireInstallConfirmed(): void {
+  globalInstallConfirmed = true;
+  _installConfirmedListeners.forEach((cb) => cb());
+}
+
+/**
+ * Async check using navigator.getInstalledRelatedApps().
+ *
+ * Chrome 84+ (Android + Desktop) can reliably report whether a PWA
+ * listed in `related_applications` in manifest.json is installed —
+ * even when the user is in a NORMAL BROWSER TAB, not the PWA itself.
+ *
+ * Requires manifest.json to have:
+ *   "related_applications": [{ "platform": "webapp", "url": "<manifest-url>" }]
+ *
+ * This is started immediately when the module loads so the result is
+ * cached long before the user taps "Free Download".
+ */
+async function _checkInstalledRelatedApps(): Promise<void> {
+  if (typeof navigator === "undefined") return;
+
+  // Already known via sync display-mode check
+  if (isAppInstalled()) {
+    _fireInstallConfirmed();
+    return;
+  }
+
+  // getInstalledRelatedApps — available Chrome 84+ Android / Chrome 85+ Desktop
+  if (!("getInstalledRelatedApps" in navigator)) return;
+
+  try {
+    const apps: unknown[] = await (navigator as any).getInstalledRelatedApps();
+    if (Array.isArray(apps) && apps.length > 0) {
+      _fireInstallConfirmed();
+    }
+  } catch {
+    // API failed — ignore, fall back to display-mode and event-based detection
+  }
+}
+
+// ─── Module-level initialization (browser only) ─────────────────────────────
+
 if (typeof window !== "undefined") {
-  // Check if head inline script already captured it
+  // Capture beforeinstallprompt if the head inline script already got it
   if ((window as any).__deferredPWAInstallPrompt) {
     globalDeferredPrompt = (window as any).__deferredPWAInstallPrompt;
   }
 
+  // Listen for any future beforeinstallprompt
   window.addEventListener("beforeinstallprompt", (e: Event) => {
     e.preventDefault();
     const p = e as BeforeInstallPromptEvent;
@@ -51,12 +113,22 @@ if (typeof window !== "undefined") {
       (window as any).__onPWAInstallAvailable(p);
     }
   });
+
+  // Start the async getInstalledRelatedApps check right away so that
+  // the result is ready before the user taps the button.
+  _checkInstalledRelatedApps().catch(() => {});
 }
 
+// ─── Exported helpers ────────────────────────────────────────────────────────
+
 /**
- * Real Installed-PWA detection.
- * Only returns true if the app is ACTUALLY running in standalone / fullscreen / minimal-ui.
- * A normal browser tab on Android, iOS, or Desktop ALWAYS returns false.
+ * Synchronous display-mode check.
+ *
+ * Returns TRUE only when running as an installed PWA
+ * (standalone / fullscreen / minimal-ui window, or iOS standalone).
+ *
+ * A normal browser tab always returns FALSE.
+ * Do NOT use this alone as proof of non-installation.
  */
 export function isAppInstalled(): boolean {
   if (typeof window === "undefined") return false;
@@ -72,9 +144,15 @@ export function isAppInstalled(): boolean {
 }
 
 /**
- * Robust Android detection.
- * Correctly identifies Android phones, tablets, and Chromium instances,
- * including when "Desktop site" is checked.
+ * Returns TRUE if installation has been confirmed by ANY reliable signal
+ * this session (display-mode, getInstalledRelatedApps, or appinstalled event).
+ */
+export function isInstallConfirmed(): boolean {
+  return globalInstallConfirmed || isAppInstalled();
+}
+
+/**
+ * Robust Android detection — handles tablets and "Desktop site" mode.
  */
 export function isAndroid(): boolean {
   if (typeof window === "undefined" || typeof navigator === "undefined") return false;
@@ -93,7 +171,7 @@ export function isAndroid(): boolean {
 }
 
 /**
- * Robust iOS detection.
+ * Robust iOS detection — handles iPad Pro with Mac UA.
  */
 export function isIos(): boolean {
   if (typeof window === "undefined" || typeof navigator === "undefined") return false;
@@ -123,9 +201,7 @@ export function detectPlatform(): DevicePlatform {
 }
 
 /**
- * Report a confirmed real PWA install to the backend.
- * Uses atomic Redis set `mp:installed_clients` on the server so that
- * a single client is counted exactly once in DOWNLOADS.
+ * Report a confirmed PWA install to the backend (idempotent via Redis SADD).
  */
 export async function sendPwaDownloadRecord(clientId: string): Promise<void> {
   if (typeof window === "undefined" || !clientId) return;
@@ -152,6 +228,8 @@ export async function sendPwaDownloadRecord(clientId: string): Promise<void> {
   }
 }
 
+// ─── Hook ────────────────────────────────────────────────────────────────────
+
 export function usePWAInstall() {
   const [platform, setPlatform] = useState<DevicePlatform>("generic");
   const [hasPrompt, setHasPrompt] = useState<boolean>(() =>
@@ -159,8 +237,12 @@ export function usePWAInstall() {
   );
 
   const [installState, setInstallState] = useState<InstallationState>(() => {
-    if (isAppInstalled()) return "INSTALLED";
-    if (globalDeferredPrompt || (typeof window !== "undefined" && (window as any).__deferredPWAInstallPrompt)) {
+    // Installed state has highest priority — check both sync and cached async result
+    if (isInstallConfirmed()) return "INSTALLED";
+    if (
+      globalDeferredPrompt ||
+      (typeof window !== "undefined" && (window as any).__deferredPWAInstallPrompt)
+    ) {
       return "INSTALL_PROMPT_AVAILABLE";
     }
     if (isIos()) return "MANUAL_INSTALL_REQUIRED";
@@ -171,11 +253,9 @@ export function usePWAInstall() {
     const currentPlatform = detectPlatform();
     setPlatform(currentPlatform);
 
-    const installed = isAppInstalled();
-    if (installed) {
+    // ── Sync check ────────────────────────────────────────────────────────
+    if (isInstallConfirmed()) {
       setInstallState("INSTALLED");
-      const clientId = getAnonymousClientId();
-      sendPwaDownloadRecord(clientId).catch(() => {});
     } else if (globalDeferredPrompt || (window as any).__deferredPWAInstallPrompt) {
       setInstallState("INSTALL_PROMPT_AVAILABLE");
       setHasPrompt(true);
@@ -183,52 +263,67 @@ export function usePWAInstall() {
       setInstallState("MANUAL_INSTALL_REQUIRED");
     }
 
-    // Register callback for when beforeinstallprompt fires later
+    // ── Async result from getInstalledRelatedApps ─────────────────────────
+    // Register listener so when the async check completes (or already has),
+    // React state is updated immediately.
+    const onInstallConfirmed = () => {
+      setInstallState("INSTALLED");
+      setHasPrompt(false);
+    };
+    _installConfirmedListeners.push(onInstallConfirmed);
+
+    // If the async check already finished before this component mounted
+    if (globalInstallConfirmed) {
+      setInstallState("INSTALLED");
+    }
+
+    // ── beforeinstallprompt callback ──────────────────────────────────────
     (window as any).__onPWAInstallAvailable = (promptEvent: BeforeInstallPromptEvent) => {
       globalDeferredPrompt = promptEvent;
       setHasPrompt(true);
-      if (!isAppInstalled()) {
+      if (!isInstallConfirmed()) {
         setInstallState("INSTALL_PROMPT_AVAILABLE");
       }
     };
 
-    // Register Service Worker for offline capability
+    // ── Service Worker registration ───────────────────────────────────────
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").catch(console.error);
     }
 
+    // ── beforeinstallprompt listener ──────────────────────────────────────
     const onBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
       const p = e as BeforeInstallPromptEvent;
       globalDeferredPrompt = p;
       (window as any).__deferredPWAInstallPrompt = p;
       setHasPrompt(true);
-      if (!isAppInstalled()) {
+      if (!isInstallConfirmed()) {
         setInstallState("INSTALL_PROMPT_AVAILABLE");
       }
     };
     window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
 
-    // Listen for appinstalled — authoritative Chromium event when install finishes
+    // ── appinstalled listener — authoritative Chromium signal ─────────────
     const onAppInstalled = () => {
-      setInstallState("INSTALLED");
-      globalDeferredPrompt = null;
-      (window as any).__deferredPWAInstallPrompt = null;
-      setHasPrompt(false);
-
-      // Increment real Redis-backed DOWNLOADS count exactly once
+      // Record the real installation in Redis (idempotent)
       const clientId = getAnonymousClientId();
       sendPwaDownloadRecord(clientId).catch(() => {});
+
+      // Mark as confirmed and notify all listeners
+      _fireInstallConfirmed();
+      globalDeferredPrompt = null;
+      (window as any).__deferredPWAInstallPrompt = null;
     };
     window.addEventListener("appinstalled", onAppInstalled);
 
-    // Watch display-mode changes
+    // ── display-mode change listener ──────────────────────────────────────
     const mq = window.matchMedia("(display-mode: standalone)");
     const onMqChange = (e: MediaQueryListEvent) => {
       if (e.matches) {
-        setInstallState("INSTALLED");
         const clientId = getAnonymousClientId();
         sendPwaDownloadRecord(clientId).catch(() => {});
+        _fireInstallConfirmed();
       }
     };
     mq.addEventListener?.("change", onMqChange);
@@ -238,30 +333,42 @@ export function usePWAInstall() {
       window.removeEventListener("appinstalled", onAppInstalled);
       mq.removeEventListener?.("change", onMqChange);
       (window as any).__onPWAInstallAvailable = null;
+
+      // Remove our listener
+      const idx = _installConfirmedListeners.indexOf(onInstallConfirmed);
+      if (idx !== -1) _installConfirmedListeners.splice(idx, 1);
     };
   }, []);
 
   /**
    * Called directly when the user clicks "Free Download".
    *
-   * Rules:
-   * 1. Already installed → "already_installed"
-   * 2. Native beforeinstallprompt exists → prompt.prompt() called IMMEDIATELY (no setTimeout!)
-   *    - DO NOT open manual instructions modal!
-   *    - If accepted → "prompt_accepted" (state becomes INSTALLING, awaits appinstalled)
-   *    - If dismissed → "dismissed" (state returns to NOT_INSTALLED)
+   * Priority order (INSTALLED always wins):
+   *
+   * 1. isInstallConfirmed() → "already_installed" (covers PWA context AND
+   *    browser-tab-after-install via getInstalledRelatedApps result)
+   * 2. Native prompt available → prompt.prompt() SYNCHRONOUSLY in gesture
+   *    - accepted → "prompt_accepted" (state stays INSTALLING until appinstalled)
+   *    - dismissed → "dismissed"
    * 3. No prompt:
    *    - iOS → "show_instructions_ios"
    *    - Android → "show_instructions_android"
-   *    - Desktop/Other → "show_instructions_desktop"
+   *    - Desktop → "show_instructions_desktop"
    */
   const triggerInstall = useCallback(async (): Promise<PWAInstallResult> => {
-    // CASE 1 — Already installed
-    if (isAppInstalled()) {
+    // ── HIGHEST PRIORITY: already installed ───────────────────────────────
+    // isInstallConfirmed() covers:
+    //   • display-mode standalone (running as PWA)
+    //   • globalInstallConfirmed set by getInstalledRelatedApps or appinstalled
+    if (isInstallConfirmed()) {
+      setInstallState("INSTALLED");
       return "already_installed";
     }
 
-    // CASE 2 — Native prompt available (Android / Chromium)
+    // ── Native prompt (Android / Desktop Chrome) ──────────────────────────
+    // NOTE: prompt.prompt() MUST be called synchronously inside the user-gesture
+    // call stack. Any await before this call (other than checking installed state
+    // from the already-resolved promise) will break the user activation token.
     const prompt =
       globalDeferredPrompt ||
       ((window as any).__deferredPWAInstallPrompt as BeforeInstallPromptEvent | null);
@@ -269,17 +376,16 @@ export function usePWAInstall() {
     if (prompt) {
       setInstallState("INSTALLING");
       try {
-        // Must call synchronously within user gesture call stack
-        await prompt.prompt();
+        await prompt.prompt(); // synchronous relative to gesture — OK
         const choice = await prompt.userChoice;
 
-        // Prompt is consumed — clear it
+        // Prompt is now consumed — clear it
         globalDeferredPrompt = null;
         (window as any).__deferredPWAInstallPrompt = null;
         setHasPrompt(false);
 
         if (choice.outcome === "accepted") {
-          // Keep state in INSTALLING until appinstalled fires
+          // Stay in INSTALLING until `appinstalled` event fires
           return "prompt_accepted";
         } else {
           setInstallState("NOT_INSTALLED");
@@ -293,30 +399,49 @@ export function usePWAInstall() {
       }
     }
 
-    // CASE 3 — iOS (no beforeinstallprompt support)
+    // If no native prompt was available, check getInstalledRelatedApps directly
+    // in case the initial async check has not resolved yet.
+    if (typeof navigator !== "undefined" && "getInstalledRelatedApps" in navigator) {
+      try {
+        const apps: unknown[] = await (navigator as any).getInstalledRelatedApps();
+        if (Array.isArray(apps) && apps.length > 0) {
+          _fireInstallConfirmed();
+          setInstallState("INSTALLED");
+          return "already_installed";
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    if (isInstallConfirmed()) {
+      setInstallState("INSTALLED");
+      return "already_installed";
+    }
+
+    // ── No native prompt — show platform instructions ─────────────────────
     if (isIos()) {
       setInstallState("MANUAL_INSTALL_REQUIRED");
       return "show_instructions_ios";
     }
 
-    // CASE 4 — Android without beforeinstallprompt
     if (isAndroid()) {
       setInstallState("MANUAL_INSTALL_REQUIRED");
       return "show_instructions_android";
     }
 
-    // CASE 5 — Desktop / Other fallback
     setInstallState("MANUAL_INSTALL_REQUIRED");
     return "show_instructions_desktop";
   }, []);
 
   return {
     installState,
-    isInstalled: installState === "INSTALLED",
+    isInstalled: installState === "INSTALLED" || isInstallConfirmed(),
     hasNativePrompt: hasPrompt,
     platform,
     triggerInstall,
     isAppInstalled,
+    isInstallConfirmed,
     isAndroid,
     isIos,
   };

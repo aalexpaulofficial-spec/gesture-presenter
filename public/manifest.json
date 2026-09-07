@@ -9,6 +9,19 @@
   "background_color": "#ffffff",
   "theme_color": "#ffffff",
   "orientation": "any",
+  "related_applications": [
+    {
+      "platform": "webapp",
+      "url": "/manifest.json",
+      "id": "/"
+    },
+    {
+      "platform": "webapp",
+      "url": "https://masterpresenter.vercel.app/manifest.json",
+      "id": "/"
+    }
+  ],
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "/app-icon-192.png",
