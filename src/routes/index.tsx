@@ -71,35 +71,27 @@ const nav = [
 
 function Landing() {
   const [menuOpen, setMenuOpen] = useState(false);
-  const { isInstalled, platform, triggerInstall, markAsInstalled } = usePWAInstall();
+  const { isInstalled, platform, triggerInstall } = usePWAInstall();
   const [alreadyInstalledOpen, setAlreadyInstalledOpen] = useState(false);
   const [instructionModalOpen, setInstructionModalOpen] = useState(false);
   const [installing, setInstalling] = useState(false);
 
+  // ── Free Download click handler ────────────────────────────────────────────
+  // Decision tree (in order):
+  //   1. Real standalone mode / appinstalled fired → "Already installed" dialog
+  //   2. Native beforeinstallprompt available      → fires browser install prompt
+  //   3. User accepted prompt                      → success / "Already installed"
+  //   4. User dismissed prompt                     → silently close (NOT "already installed")
   async function handleDownload() {
     setInstalling(true);
     try {
       const result = await triggerInstall();
-      if (result === "already_installed") {
-        setAlreadyInstalledOpen(true);
-      } else if (result === "installed") {
+      if (result === "already_installed" || result === "installed") {
         setAlreadyInstalledOpen(true);
       } else if (result === "show_instructions") {
-        // Try Web Share API first (works on iOS to trigger Add to Home Screen)
-        if (typeof navigator !== "undefined" && navigator.share) {
-          try {
-            await navigator.share({
-              title: "Master Presenter",
-              text: "Control your presentation with hand gestures — free, offline app.",
-              url: window.location.origin,
-            });
-            return;
-          } catch {
-            // User dismissed share sheet or share failed — fall through to modal
-          }
-        }
         setInstructionModalOpen(true);
       }
+      // If result === "dismissed", user canceled the browser prompt; do not show "already installed"
     } finally {
       setInstalling(false);
     }
@@ -114,9 +106,8 @@ function Landing() {
         setAlreadyInstalledOpen(true);
         return;
       }
-      // No native prompt available (iOS Safari, Firefox, etc.) — use Web Share API
-      // which lets users tap "Add to Home Screen" from the native share sheet
       if (result === "show_instructions") {
+        // On iOS Safari, PWA installation is performed via the Share sheet -> Add to Home Screen
         if (typeof navigator !== "undefined" && navigator.share) {
           try {
             await navigator.share({
@@ -126,12 +117,8 @@ function Landing() {
             });
             return;
           } catch {
-            // User dismissed — that's fine
+            // User dismissed share sheet
           }
-        } else {
-          // Desktop browser without share API: close modal and let user
-          // install via the browser address bar install icon
-          setInstructionModalOpen(false);
         }
       }
     } finally {
@@ -140,7 +127,6 @@ function Landing() {
   }
 
   function handleMarkInstalled() {
-    markAsInstalled();
     setInstructionModalOpen(false);
     setAlreadyInstalledOpen(true);
   }
