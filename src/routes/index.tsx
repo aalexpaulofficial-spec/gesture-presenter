@@ -72,19 +72,31 @@ const nav = [
 
 function Landing() {
   const [menuOpen, setMenuOpen] = useState(false);
-  const { installState, isInstalled, platform, triggerInstall, isAppInstalled } = usePWAInstall();
+  const { installState, isInstalled, platform, triggerInstall, isAppInstalled, isAndroid, isIos } = usePWAInstall();
   const [alreadyInstalledOpen, setAlreadyInstalledOpen] = useState(false);
   const [instructionModalOpen, setInstructionModalOpen] = useState(false);
-  const [instructionPlatform, setInstructionPlatform] = useState<"ios" | "android" | "desktop">("desktop");
+  const [instructionPlatform, setInstructionPlatform] = useState<"ios" | "android" | "desktop">(() => {
+    if (typeof window !== "undefined") {
+      if (isAndroid()) return "android";
+      if (isIos()) return "ios";
+    }
+    return "desktop";
+  });
   const [installing, setInstalling] = useState(false);
 
+  useEffect(() => {
+    if (isAndroid()) {
+      setInstructionPlatform("android");
+    } else if (isIos()) {
+      setInstructionPlatform("ios");
+    }
+  }, [isAndroid, isIos]);
+
   const downloadButtonLabel =
-    installState === "INSTALLED"
+    installState === "INSTALLED" || isInstalled
       ? "Already Installed"
       : installState === "INSTALLING" || installing
       ? "Installing…"
-      : installState === "MANUAL_INSTALL_REQUIRED"
-      ? "Install Master Presenter"
       : "Free Download";
 
   async function handleDownload() {
@@ -105,10 +117,16 @@ function Landing() {
         setInstructionPlatform("android");
         setInstructionModalOpen(true);
       } else if (result === "show_instructions_desktop") {
-        setInstructionPlatform("desktop");
+        if (isAndroid()) {
+          setInstructionPlatform("android");
+        } else if (isIos()) {
+          setInstructionPlatform("ios");
+        } else {
+          setInstructionPlatform("desktop");
+        }
         setInstructionModalOpen(true);
       }
-      // If result === "dismissed" or "prompt_accepted", do not claim already installed!
+      // If result === "dismissed" or "prompt_accepted", do not open modal!
     } finally {
       setInstalling(false);
     }
