@@ -71,7 +71,7 @@ const nav = [
 
 function Landing() {
   const [menuOpen, setMenuOpen] = useState(false);
-  const { isInstalled, platform, triggerInstall } = usePWAInstall();
+  const { isInstalled, platform, triggerInstall, markAsInstalled } = usePWAInstall();
   const [alreadyInstalledOpen, setAlreadyInstalledOpen] = useState(false);
   const [instructionModalOpen, setInstructionModalOpen] = useState(false);
 
@@ -79,9 +79,25 @@ function Landing() {
     const result = await triggerInstall();
     if (result === "already_installed") {
       setAlreadyInstalledOpen(true);
+    } else if (result === "installed") {
+      setAlreadyInstalledOpen(true);
     } else if (result === "show_instructions") {
       setInstructionModalOpen(true);
     }
+  }
+
+  async function handleModalInstall() {
+    const result = await triggerInstall();
+    if (result === "installed" || result === "already_installed") {
+      setInstructionModalOpen(false);
+      setAlreadyInstalledOpen(true);
+    }
+  }
+
+  function handleMarkInstalled() {
+    markAsInstalled();
+    setInstructionModalOpen(false);
+    setAlreadyInstalledOpen(true);
   }
 
   const showDownloadBtn = true;
@@ -183,7 +199,7 @@ function Landing() {
       {/* Already Installed Dialog */}
       <Dialog open={alreadyInstalledOpen} onOpenChange={setAlreadyInstalledOpen}>
         <DialogContent className="max-w-sm text-center">
-          <div className="mx-auto mb-2 flex h-16 w-16 items-center justify-center rounded-2xl border border-border bg-card p-1.5 shadow-soft">
+          <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-2xl border border-border bg-card p-1.5 shadow-soft">
             <img
               src="/MASTER PRESENTER OFFICIAL LOGO WITH BG.png"
               alt="Master Presenter Official Logo"
@@ -191,33 +207,36 @@ function Landing() {
             />
           </div>
           <DialogHeader>
-            <DialogTitle className="font-display text-lg">Already installed</DialogTitle>
-            <DialogDescription className="text-sm mt-2 text-muted-foreground">
-              Master Presenter is already installed on this device.
+            <DialogTitle className="font-display text-lg">Already Installed</DialogTitle>
+            <DialogDescription className="text-sm mt-2 text-muted-foreground leading-relaxed">
+              Master Presenter is already installed on your device. You can launch it anytime from your home screen or desktop, or start presenting right now!
             </DialogDescription>
           </DialogHeader>
-          <div className="mt-4 flex flex-col items-center gap-2.5">
-            <a
-              href="/MASTER PRESENTER OFFICIAL LOGO WITH BG.png"
-              download="MASTER PRESENTER OFFICIAL LOGO WITH BG.png"
-              className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
+          <div className="mt-5 flex flex-col gap-2">
+            <Button asChild size="default" className="w-full rounded-full">
+              <Link to="/present" search={{ plan: "Master Hand" }}>
+                Start Presenting <ArrowRight className="ml-1.5 h-4 w-4" />
+              </Link>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setAlreadyInstalledOpen(false)}
+              className="w-full rounded-full"
             >
-              <Download className="h-3.5 w-3.5" /> Download Official Logo
-            </a>
-            <Button onClick={() => setAlreadyInstalledOpen(false)} className="mt-1 rounded-full px-6">
-              OK
+              Close
             </Button>
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* Device-Specific PWA Installation Instructions & Official Logo Download */}
+      {/* Device-Specific PWA Installation Instructions */}
       <Dialog open={instructionModalOpen} onOpenChange={setInstructionModalOpen}>
         <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <div className="flex items-center gap-3.5 rounded-2xl border border-border bg-card p-3 shadow-soft">
             <img
               src="/MASTER PRESENTER OFFICIAL LOGO WITH BG.png"
-              alt="Master Presenter Official App"
+              alt="Master Presenter App"
               className="h-14 w-14 rounded-xl border border-border/60 bg-white object-contain p-0.5 shadow-xs shrink-0"
             />
             <div className="min-w-0 flex-1 text-left">
@@ -225,23 +244,27 @@ function Landing() {
                 Master Presenter
               </h4>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Official Presentation App · Offline Ready
+                Offline Presentation App · Hand & Voice Control
               </p>
             </div>
-            <a
-              href="/MASTER PRESENTER OFFICIAL LOGO WITH BG.png"
-              download="MASTER PRESENTER OFFICIAL LOGO WITH BG.png"
-              title="Download Official Logo"
-              className="inline-flex items-center gap-1 rounded-lg border border-border bg-secondary/80 px-2.5 py-1.5 text-[11px] font-medium text-foreground transition-colors hover:bg-secondary"
-            >
-              <Download className="h-3 w-3" /> Logo
-            </a>
+            <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-semibold text-primary shrink-0">
+              Free App
+            </span>
           </div>
 
-          <DialogHeader className="text-left mt-2">
-            <DialogTitle className="font-display text-base">Install / Download App</DialogTitle>
+          <Button
+            id="modal-install-app-btn"
+            size="lg"
+            onClick={handleModalInstall}
+            className="mt-3 w-full rounded-xl py-5 text-sm font-semibold shadow-soft"
+          >
+            <Download className="mr-2 h-4 w-4" /> Download & Install App
+          </Button>
+
+          <DialogHeader className="text-left mt-3">
+            <DialogTitle className="font-display text-base">Installation Guide for Your Device</DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground">
-              Install to your home screen or desktop to present smoothly anytime, even offline.
+              Follow the quick steps below to add Master Presenter to your device:
             </DialogDescription>
           </DialogHeader>
 
@@ -257,7 +280,7 @@ function Landing() {
                     Scroll down and tap <strong>Add to Home Screen</strong> (+).
                   </li>
                   <li>
-                    Tap <strong>Add</strong> in the top right corner.
+                    Tap <strong>Add</strong> in the top right corner. The Master Presenter app icon will appear on your screen.
                   </li>
                 </ol>
               </div>
@@ -268,10 +291,13 @@ function Landing() {
                 </p>
                 <ol className="list-decimal list-inside space-y-1.5 text-xs leading-relaxed">
                   <li>
-                    Tap the menu icon (<strong>⋮</strong>) in the top-right corner.
+                    Tap the browser menu icon (<strong>⋮</strong>) in the top-right corner.
                   </li>
                   <li>
                     Select <strong>Install app</strong> or <strong>Add to Home screen</strong>.
+                  </li>
+                  <li>
+                    Confirm by tapping <strong>Install</strong>.
                   </li>
                 </ol>
               </div>
@@ -290,46 +316,50 @@ function Landing() {
             ) : (
               <div className="rounded-xl border border-border bg-card p-4 space-y-2">
                 <p className="font-semibold text-foreground">
-                  On Desktop (Chrome / Edge / Windows / Mac):
+                  On Desktop / Laptop (Chrome / Edge / Windows / Mac):
                 </p>
                 <ol className="list-decimal list-inside space-y-1.5 text-xs leading-relaxed">
                   <li>
-                    Click the <strong>Install</strong> icon in the address bar (on the right).
+                    Click the <strong>Install</strong> icon in the address bar (on the right side).
                   </li>
                   <li>
                     Or click the browser menu (<strong>⋮</strong>) → <strong>Save and share</strong>{" "}
                     → <strong>Install Master Presenter</strong>.
                   </li>
+                  <li>
+                    Click <strong>Install</strong> to add it to your desktop and apps menu.
+                  </li>
                 </ol>
               </div>
             )}
 
-            {/* Official App Box */}
+            {/* Offline Capability Box */}
             <div className="flex items-center gap-3.5 rounded-xl border border-primary/20 bg-primary/5 p-3">
               <div className="shrink-0 rounded-lg border border-border/70 bg-white p-1 shadow-xs">
                 <img
                   src="/MASTER PRESENTER OFFICIAL LOGO WITH BG.png"
                   alt="Master Presenter Official"
-                  className="h-12 w-12 object-contain"
+                  className="h-10 w-10 object-contain"
                 />
               </div>
               <div className="text-left">
-                <p className="text-xs font-semibold text-foreground">Official Master Presenter App</p>
+                <p className="text-xs font-semibold text-foreground">Works Completely Offline</p>
                 <p className="text-[11px] text-muted-foreground mt-0.5">
-                  Full gesture control, voice navigation, and slide presentation working directly on your device.
+                  Present slides with hand and voice control anywhere, even without internet access.
                 </p>
               </div>
             </div>
           </div>
 
-          <div className="mt-4 flex items-center justify-between border-t border-border pt-3">
-            <a
-              href="/MASTER PRESENTER OFFICIAL LOGO WITH BG.png"
-              download="MASTER PRESENTER OFFICIAL LOGO WITH BG.png"
-              className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
+          <div className="mt-4 flex items-center justify-between border-t border-border pt-3 gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleMarkInstalled}
+              className="text-xs text-muted-foreground hover:text-foreground"
             >
-              <Download className="h-3.5 w-3.5" /> Download Official Logo
-            </a>
+              <Check className="mr-1.5 h-3.5 w-3.5 text-primary" /> I've already installed it
+            </Button>
             <Button
               variant="outline"
               size="sm"

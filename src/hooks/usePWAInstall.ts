@@ -206,10 +206,18 @@ export function usePWAInstall() {
     return "show_instructions";
   }, [isInstalled, deferredPrompt]);
 
+  const markAsInstalled = useCallback(() => {
+    setIsInstalled(true);
+    try {
+      localStorage.setItem("master_presenter_pwa_installed", "true");
+    } catch {}
+  }, []);
+
   return {
     isInstalled,
     deferredPromptAvailable: !!deferredPrompt,
     platform,
     triggerInstall,
+    markAsInstalled,
   };
 }
