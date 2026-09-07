@@ -23,6 +23,7 @@ import {
   Zap,
 } from "lucide-react";
 import { usePWAInstall } from "@/hooks/usePWAInstall";
+import { useLiveUserCount } from "@/hooks/useLiveUserCount";
 import { Button } from "@/components/ui/button";
 import {
   Accordion,
@@ -1018,6 +1019,8 @@ function Faq() {
 }
 
 function FinalCta() {
+  const liveUsers = useLiveUserCount();
+
   return (
     <section className="px-5 py-20 sm:py-28 lg:px-8">
       <div className="mx-auto max-w-5xl overflow-hidden rounded-3xl border border-border bg-[image:var(--gradient-ink)] px-8 py-16 text-center shadow-lift sm:px-16">
@@ -1036,8 +1039,19 @@ function FinalCta() {
               Start free <ArrowRight className="ml-1.5 h-4 w-4" />
             </Link>
           </Button>
-          <span className="flex items-center gap-2 text-xs text-[oklch(0.8_0.02_150)]">
-            <Users className="h-3.5 w-3.5" /> Free hand control, no account needed
+          <span
+            id="live-user-count-container"
+            data-testid="live-user-count-container"
+            className="flex items-center gap-2 text-xs text-[oklch(0.8_0.02_150)]"
+          >
+            <Users className="h-3.5 w-3.5" />
+            {liveUsers !== null ? (
+              <span id="live-user-count" data-testid="live-user-count">
+                <span className="font-semibold">{liveUsers}</span> active{" "}
+                {liveUsers === 1 ? "user" : "users"} ·{" "}
+              </span>
+            ) : null}
+            Free hand control, no account needed
           </span>
         </div>
       </div>

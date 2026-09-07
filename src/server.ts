@@ -44,8 +44,81 @@ function isH3SwallowedErrorBody(body: string): boolean {
   }
 }
 
+import { globalSessionTracker } from "./lib/session-tracker";
+
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
+    const url = new URL(request.url);
+
+    if (url.pathname === "/stats/live" && request.method === "GET") {
+      return new Response(
+        JSON.stringify({ active_users: globalSessionTracker.getActiveCount() }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+          },
+        },
+      );
+    }
+
+    if (url.pathname === "/sessions/heartbeat" && request.method === "POST") {
+      try {
+        const body = (await request.json()) as { client_id?: string; session_id?: string };
+        if (body?.client_id) {
+          const active = globalSessionTracker.heartbeat(body.client_id, body.session_id);
+          return new Response(JSON.stringify({ status: "ok", active_users: active }), {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+              "Access-Control-Allow-Origin": "*",
+            },
+          });
+        }
+      } catch {
+        // ignore JSON parse failure
+      }
+      return new Response(JSON.stringify({ error: "Invalid payload" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.pathname === "/sessions/end" && request.method === "POST") {
+      try {
+        let body: { client_id?: string; session_id?: string } = {};
+        const text = await request.text();
+        if (text) {
+          try {
+            body = JSON.parse(text);
+          } catch {
+            // raw text or sendBeacon
+          }
+        }
+        if (body?.client_id) {
+          const active = globalSessionTracker.endSession(body.client_id, body.session_id);
+          return new Response(JSON.stringify({ status: "ok", active_users: active }), {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+              "Access-Control-Allow-Origin": "*",
+            },
+          });
+        }
+      } catch {
+        // ignore
+      }
+      return new Response(JSON.stringify({ status: "ok" }), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      });
+    }
+
     try {
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);

@@ -25,6 +25,7 @@ import { CameraWindow } from "@/components/presenter/CameraWindow";
 import { WritingLayer, type WriteTick } from "@/components/presenter/WritingLayer";
 import { useHandTracking, type IndexFingerPoint } from "@/hooks/useHandTracking";
 import { useVoiceControl, VoiceHighlight } from "@/hooks/useVoiceControl";
+import { usePresentationSession } from "@/hooks/usePresentationSession";
 import {
   ERASER_RADIUS,
   eraseFromStrokes,
@@ -122,6 +123,7 @@ function capabilitiesForPlan(plan: string) {
 }
 
 function PresentPage() {
+  usePresentationSession();
   const [phase, setPhase] = useState<Phase>("upload");
   const [progress, setProgress] = useState(0);
   const [buffer, setBuffer] = useState<ArrayBuffer | null>(null);

@@ -10,6 +10,7 @@ truth: nothing is redesigned and no sample deck is ever substituted.
 from __future__ import annotations
 
 import io
+import time
 import uuid
 from typing import Any
 
@@ -28,11 +29,67 @@ app = FastAPI(title="Presentation Service", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["GET", "POST", "DELETE"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
 store = DeckStore()
+
+
+class ActiveSessionTracker:
+    def __init__(self, timeout_seconds: float = 25.0):
+        self.timeout_seconds = timeout_seconds
+        self._clients: dict[str, dict[str, Any]] = {}
+
+    def heartbeat(self, client_id: str, session_id: str | None = None) -> int:
+        now = time.time()
+        self._prune(now)
+        if client_id not in self._clients:
+            self._clients[client_id] = {"last_seen": now, "sessions": set()}
+        self._clients[client_id]["last_seen"] = now
+        if session_id:
+            self._clients[client_id]["sessions"].add(session_id)
+        return len(self._clients)
+
+    def end_session(self, client_id: str, session_id: str | None = None) -> int:
+        now = time.time()
+        if client_id in self._clients:
+            if session_id and session_id in self._clients[client_id]["sessions"]:
+                self._clients[client_id]["sessions"].discard(session_id)
+            if not session_id or len(self._clients[client_id]["sessions"]) == 0:
+                self._clients.pop(client_id, None)
+        self._prune(now)
+        return len(self._clients)
+
+    def get_active_count(self) -> int:
+        self._prune(time.time())
+        return len(self._clients)
+
+    def _prune(self, now: float) -> None:
+        expired = [
+            cid for cid, data in self._clients.items()
+            if now - data["last_seen"] > self.timeout_seconds
+        ]
+        for cid in expired:
+            self._clients.pop(cid, None)
+
+
+session_tracker = ActiveSessionTracker()
+
+
+class SessionHeartbeat(BaseModel):
+    client_id: str
+    session_id: str | None = None
+
+
+class SessionEnd(BaseModel):
+    client_id: str
+    session_id: str | None = None
+
+
+class LiveStatsResponse(BaseModel):
+    active_users: int
+
 
 
 def normalize_plan(plan: str | None) -> str:
@@ -88,6 +145,23 @@ class DeckResponse(BaseModel):
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/stats/live", response_model=LiveStatsResponse)
+def get_live_stats() -> dict[str, int]:
+    return {"active_users": session_tracker.get_active_count()}
+
+
+@app.post("/sessions/heartbeat")
+def session_heartbeat(data: SessionHeartbeat) -> dict[str, Any]:
+    active = session_tracker.heartbeat(data.client_id, data.session_id)
+    return {"status": "ok", "active_users": active}
+
+
+@app.post("/sessions/end")
+def session_end(data: SessionEnd) -> dict[str, Any]:
+    active = session_tracker.end_session(data.client_id, data.session_id)
+    return {"status": "ok", "active_users": active}
 
 
 @app.post("/decks", response_model=DeckResponse)
