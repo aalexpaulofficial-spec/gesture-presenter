@@ -7,13 +7,79 @@
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 import type { Plugin } from "vite";
 import { globalSessionTracker } from "./src/lib/session-tracker";
+import {
+  getCumulativeStats,
+  recordSessionStart,
+  recordSessionEnd,
+} from "./src/lib/cumulative-stats";
 
 function liveStatsDevPlugin(): Plugin {
   return {
     name: "live-stats-dev-middleware",
     configureServer(server) {
-      server.middlewares.use((req, res, next) => {
+      server.middlewares.use(async (req, res, next) => {
         const url = req.url?.split("?")[0];
+
+        if (url === "/stats/cumulative" && req.method === "GET") {
+          try {
+            const stats = await getCumulativeStats();
+            res.setHeader("Content-Type", "application/json");
+            res.setHeader("Access-Control-Allow-Origin", "*");
+            res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+            res.end(JSON.stringify(stats));
+          } catch {
+            res.statusCode = 503;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ error: "unavailable" }));
+          }
+          return;
+        }
+
+        if (url === "/stats/session/start" && req.method === "POST") {
+          let body = "";
+          req.on("data", (chunk: any) => {
+            body += chunk;
+          });
+          req.on("end", async () => {
+            try {
+              if (body) {
+                const data = JSON.parse(body);
+                if (data.client_id) {
+                  await recordSessionStart(data.client_id);
+                }
+              }
+            } catch {
+              // ignore
+            }
+            res.setHeader("Content-Type", "application/json");
+            res.setHeader("Access-Control-Allow-Origin", "*");
+            res.end(JSON.stringify({ status: "ok" }));
+          });
+          return;
+        }
+
+        if (url === "/stats/session/end" && req.method === "POST") {
+          let body = "";
+          req.on("data", (chunk: any) => {
+            body += chunk;
+          });
+          req.on("end", async () => {
+            try {
+              if (body) {
+                const data = JSON.parse(body);
+                const duration = typeof data.duration_seconds === "number" ? data.duration_seconds : 0;
+                await recordSessionEnd(duration);
+              }
+            } catch {
+              // ignore
+            }
+            res.setHeader("Content-Type", "application/json");
+            res.setHeader("Access-Control-Allow-Origin", "*");
+            res.end(JSON.stringify({ status: "ok" }));
+          });
+          return;
+        }
+
         if (url === "/stats/live" && req.method === "GET") {
           res.setHeader("Content-Type", "application/json");
           res.setHeader("Access-Control-Allow-Origin", "*");

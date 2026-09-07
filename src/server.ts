@@ -45,6 +45,11 @@ function isH3SwallowedErrorBody(body: string): boolean {
 }
 
 import { globalSessionTracker } from "./lib/session-tracker";
+import {
+  getCumulativeStats,
+  recordSessionStart,
+  recordSessionEnd,
+} from "./lib/cumulative-stats";
 
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
@@ -62,6 +67,70 @@ export default {
           },
         },
       );
+    }
+
+    // ── Cumulative statistics ─────────────────────────────────────────────────
+
+    if (url.pathname === "/stats/cumulative" && request.method === "GET") {
+      try {
+        const stats = await getCumulativeStats();
+        return new Response(JSON.stringify(stats), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+          },
+        });
+      } catch {
+        return new Response(JSON.stringify({ error: "unavailable" }), {
+          status: 503,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    if (url.pathname === "/stats/session/start" && request.method === "POST") {
+      try {
+        const body = (await request.json()) as { client_id?: string; session_id?: string };
+        if (body?.client_id) {
+          await recordSessionStart(body.client_id);
+        }
+      } catch {
+        // ignore JSON parse or store errors — never block the presenter
+      }
+      return new Response(JSON.stringify({ status: "ok" }), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      });
+    }
+
+    if (url.pathname === "/stats/session/end" && request.method === "POST") {
+      try {
+        let body: { client_id?: string; session_id?: string; duration_seconds?: number } = {};
+        const text = await request.text();
+        if (text) {
+          try {
+            body = JSON.parse(text) as typeof body;
+          } catch {
+            // raw text or sendBeacon with non-JSON
+          }
+        }
+        const duration = typeof body.duration_seconds === "number" ? body.duration_seconds : 0;
+        await recordSessionEnd(duration);
+      } catch {
+        // ignore
+      }
+      return new Response(JSON.stringify({ status: "ok" }), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      });
     }
 
     if (url.pathname === "/sessions/heartbeat" && request.method === "POST") {

@@ -30,11 +30,14 @@ function getTabSessionId(): string {
 
 export function usePresentationSession() {
   const isPresentingRef = useRef(true);
+  const sessionEndedRef = useRef(false);
 
   useEffect(() => {
     isPresentingRef.current = true;
+    sessionEndedRef.current = false;
     const clientId = getAnonymousClientId();
     const sessionId = getTabSessionId();
+    const startTime = Date.now();
 
     const apiBase =
       typeof import.meta !== "undefined" && import.meta.env?.VITE_PRESENTATION_API_URL
@@ -43,6 +46,19 @@ export function usePresentationSession() {
 
     const heartbeatUrl = `${apiBase}/sessions/heartbeat`;
     const endUrl = `${apiBase}/sessions/end`;
+    const startStatsUrl = `${apiBase}/stats/session/start`;
+    const endStatsUrl = `${apiBase}/stats/session/end`;
+
+    // Record session start for cumulative statistics
+    try {
+      fetch(startStatsUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ client_id: clientId, session_id: sessionId }),
+      }).catch(() => {});
+    } catch {
+      // ignore
+    }
 
     const sendHeartbeat = () => {
       if (!isPresentingRef.current) return;
@@ -60,16 +76,35 @@ export function usePresentationSession() {
     };
 
     const sendEnd = () => {
+      if (sessionEndedRef.current) return;
+      sessionEndedRef.current = true;
+      const durationSeconds = Math.max(0, Math.round((Date.now() - startTime) / 1000));
+      const payload = JSON.stringify({ client_id: clientId, session_id: sessionId });
+      const statsPayload = JSON.stringify({
+        client_id: clientId,
+        session_id: sessionId,
+        duration_seconds: durationSeconds,
+      });
+
       try {
-        const payload = JSON.stringify({ client_id: clientId, session_id: sessionId });
         if (typeof navigator !== "undefined" && navigator.sendBeacon) {
           const blob = new Blob([payload], { type: "application/json" });
           navigator.sendBeacon(endUrl, blob);
+
+          const statsBlob = new Blob([statsPayload], { type: "application/json" });
+          navigator.sendBeacon(endStatsUrl, statsBlob);
         } else {
           fetch(endUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: payload,
+            keepalive: true,
+          }).catch(() => {});
+
+          fetch(endStatsUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: statsPayload,
             keepalive: true,
           }).catch(() => {});
         }
@@ -100,3 +135,4 @@ export function usePresentationSession() {
     };
   }, []);
 }
+
